@@ -1,0 +1,6 @@
+llama-index
+llama-index-llms-ollama
+requests
+pydantic
+
+llama-index-core
