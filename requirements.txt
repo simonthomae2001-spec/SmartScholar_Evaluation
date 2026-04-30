@@ -1,6 +1,10 @@
+streamlit
 llama-index
 llama-index-llms-ollama
-requests
+llama-index-embeddings-ollama
+python-dotenv
 pydantic
+chromadb
+llama-index-vector-stores-chroma
+requests
 
-llama-index-core
