@@ -9,9 +9,9 @@ src_dir = os.path.join(current_dir, "src")
 if src_dir not in sys.path:
     sys.path.append(src_dir)
 
-from core.model_factory import ModelFactory
-from agents.researcher_agent import ResearcherAgent
-from core.vector_store import VectorEngine
+from src.core.model_factory import ModelFactory
+from src.agents.researcher_agent import ResearcherAgent
+from src.core.vector_store import VectorEngine
 
 # Page configuration
 st.set_page_config(
