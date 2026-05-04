@@ -4,7 +4,7 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.core import StorageContext, VectorStoreIndex, Settings
 
 from llama_index.core.schema import Document
-from core.model_factory import ModelFactory
+from src.core.model_factory import ModelFactory
 
 class VectorEngine:
     def __init__(self, collection_name: str = "scholar_papers"):

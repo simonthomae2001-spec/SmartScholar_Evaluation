@@ -9,8 +9,8 @@ API via ScholarTool, and deduplicates the aggregated results by paperId.
 import json
 import re
 
-from core.model_factory import ModelFactory
-from tools.scholar_tool import ScholarTool
+from src.core.model_factory import ModelFactory
+from src.tools.scholar_tool import ScholarTool
 
 
 class ResearcherAgent:
