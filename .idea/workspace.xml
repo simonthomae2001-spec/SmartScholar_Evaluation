@@ -4,27 +4,14 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e80944f8-b2f3-446d-a57d-1e74ca64ae1e" name="Changes" comment="README.md added Members">
-      <change afterPath="$PROJECT_DIR$/.env" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.streamlit/config.toml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/app.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/data/api_keys/semantic_scholar-api_key" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/data/chroma_db/1d1bd807-7c66-44aa-a07b-8a8b2808a769/data_level0.bin" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/data/chroma_db/1d1bd807-7c66-44aa-a07b-8a8b2808a769/header.bin" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/data/chroma_db/1d1bd807-7c66-44aa-a07b-8a8b2808a769/length.bin" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/data/chroma_db/1d1bd807-7c66-44aa-a07b-8a8b2808a769/link_lists.bin" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/data/chroma_db/chroma.sqlite3" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/agents/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/agents/researcher_agent.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/core/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/core/model_factory.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/core/vector_store.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/tools/scholar_tool.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/utils/__init__.py" afterDir="false" />
+    <list default="true" id="e80944f8-b2f3-446d-a57d-1e74ca64ae1e" name="Changes" comment="src. error fixed">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/app.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/chroma_db/1d1bd807-7c66-44aa-a07b-8a8b2808a769/length.bin" beforeDir="false" afterPath="$PROJECT_DIR$/data/chroma_db/1d1bd807-7c66-44aa-a07b-8a8b2808a769/length.bin" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/chroma_db/chroma.sqlite3" beforeDir="false" afterPath="$PROJECT_DIR$/data/chroma_db/chroma.sqlite3" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/hello_llm.py" beforeDir="false" afterPath="$PROJECT_DIR$/hello_llm.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/agents/researcher_agent.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/agents/researcher_agent.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/tools/scholar_tool.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/tools/scholar_tool.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -41,7 +28,7 @@
   <component name="Git.Settings">
     <option name="RECENT_BRANCH_BY_REPOSITORY">
       <map>
-        <entry key="$PROJECT_DIR$" value="master" />
+        <entry key="$PROJECT_DIR$" value="dev_Oliver" />
       </map>
     </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -66,28 +53,29 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;Python.app (1).executor&quot;: &quot;Run&quot;,
-    &quot;Python.app.executor&quot;: &quot;Run&quot;,
-    &quot;Python.hello_llm.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
-    &quot;ai.playground.ignore.import.keys.banner.in.settings&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;dev__Oliver&quot;,
-    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/olive/OneDrive/Desktop/Master Studium/KI/Praktikum/projekt/SmartScholar&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Python.app (1).executor": "Run",
+    "Python.app.executor": "Run",
+    "Python.hello_llm.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "ai.playground.ignore.import.keys.banner.in.settings": "true",
+    "git-widget-placeholder": "dev__Oliver__researcherAgent",
+    "ignore.virus.scanning.warn.message": "true",
+    "last_opened_file_path": "C:/Users/olive/OneDrive/Desktop/Master Studium/KI/Praktikum/projekt/SmartScholar",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\olive\OneDrive\Desktop\Master Studium\KI\Praktikum\projekt\SmartScholar\data\api_keys" />
@@ -173,7 +161,11 @@
       <workItem from="1777301516784" duration="2442000" />
       <workItem from="1777462502208" duration="17313000" />
       <workItem from="1777530389586" duration="2410000" />
-      <workItem from="1777533717395" duration="1373000" />
+      <workItem from="1777533717395" duration="2921000" />
+      <workItem from="1777552735828" duration="711000" />
+      <workItem from="1777812286305" duration="6837000" />
+      <workItem from="1778092657923" duration="7449000" />
+      <workItem from="1779026130313" duration="5088000" />
     </task>
     <task id="LOCAL-00001" summary="initial commit">
       <option name="closed" value="true" />
@@ -199,7 +191,31 @@
       <option name="project" value="LOCAL" />
       <updated>1776932406534</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="initialize SmartScholar architecture and core agentic pipelineThis initial commit establishes the foundational framework for SmartScholar, an autonomous research agent designed to streamline academic literature synthesis via agentic workflows.The architecture prioritizes modularity, decoupling LLM orchestration from data retrieval and vector persistence.Core Technical Implementation:Agentic Orchestration (ResearcherAgent): Implemented a multi-step reasoning pipeline featuring recursive query expansion. It programmatically transforms high-level topics into a structured set of scientific search parameters to maximize recall.  Academic Data Integration (ScholarTool): Built a robust interface for the Semantic Scholar API, handling paginated retrieval of peer-reviewed metadata and full-text references.RAG &amp; Vector Persistence (VectorEngine): Integrated ChromaDB for high-dimensional embeddings and document indexing, enabling context-aware semantic retrieval for literature synthesis.  Provider Abstraction (ModelFactory): Implemented a factory pattern for LLM initialization (Gemini-native), ensuring centralized configuration and scalability for future model providers.  Advanced UX/UI (Streamlit):Developed a premium, Gemini-inspired interface using custom CSS overrides.Chain-of-Thought Visualization: Integrated a real-time &quot;Trace of Thoughts&quot; logging container to provide transparency into the agent's internal reasoning steps.  Asynchronous State Management: Implemented robust session state handling for non-blocking execution, including interrupt signals for active research threads.Export &amp; Citation: Added automated markdown synthesis and direct source linking to maintain academic provenance.Project Topology:src/agents/: Orchestration logic and query optimization.src/tools/: Downstream API integrations (Semantic Scholar).src/core/: Persistence layer (ChromaDB) and model abstractions.app.py: Streamlit entry point with custom theme injections.">
+      <option name="closed" value="true" />
+      <created>1777535309869</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1777535309869</updated>
+    </task>
+    <task id="LOCAL-00005" summary="src. error fixed">
+      <option name="closed" value="true" />
+      <created>1777913590360</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1777913590360</updated>
+    </task>
+    <task id="LOCAL-00006" summary="src. error fixed">
+      <option name="closed" value="true" />
+      <created>1777914469939</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1777914469939</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -208,10 +224,12 @@
   <component name="VcsManagerConfiguration">
     <MESSAGE value="initial commit" />
     <MESSAGE value="README.md added Members" />
-    <option name="LAST_COMMIT_MESSAGE" value="README.md added Members" />
+    <MESSAGE value="initialize SmartScholar architecture and core agentic pipelineThis initial commit establishes the foundational framework for SmartScholar, an autonomous research agent designed to streamline academic literature synthesis via agentic workflows.The architecture prioritizes modularity, decoupling LLM orchestration from data retrieval and vector persistence.Core Technical Implementation:Agentic Orchestration (ResearcherAgent): Implemented a multi-step reasoning pipeline featuring recursive query expansion. It programmatically transforms high-level topics into a structured set of scientific search parameters to maximize recall.  Academic Data Integration (ScholarTool): Built a robust interface for the Semantic Scholar API, handling paginated retrieval of peer-reviewed metadata and full-text references.RAG &amp; Vector Persistence (VectorEngine): Integrated ChromaDB for high-dimensional embeddings and document indexing, enabling context-aware semantic retrieval for literature synthesis.  Provider Abstraction (ModelFactory): Implemented a factory pattern for LLM initialization (Gemini-native), ensuring centralized configuration and scalability for future model providers.  Advanced UX/UI (Streamlit):Developed a premium, Gemini-inspired interface using custom CSS overrides.Chain-of-Thought Visualization: Integrated a real-time &quot;Trace of Thoughts&quot; logging container to provide transparency into the agent's internal reasoning steps.  Asynchronous State Management: Implemented robust session state handling for non-blocking execution, including interrupt signals for active research threads.Export &amp; Citation: Added automated markdown synthesis and direct source linking to maintain academic provenance.Project Topology:src/agents/: Orchestration logic and query optimization.src/tools/: Downstream API integrations (Semantic Scholar).src/core/: Persistence layer (ChromaDB) and model abstractions.app.py: Streamlit entry point with custom theme injections." />
+    <MESSAGE value="src. error fixed" />
+    <option name="LAST_COMMIT_MESSAGE" value="src. error fixed" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/SmartScholar$app__1_.coverage" NAME="app (1) Coverage Results" MODIFIED="1777470130441" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/SmartScholar$app__1_.coverage" NAME="app (1) Coverage Results" MODIFIED="1777914416109" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/SmartScholar$app.coverage" NAME="app Coverage Results" MODIFIED="1777468703273" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/smartscholar" />
     <SUITE FILE_PATH="coverage/SmartScholar$hello_llm.coverage" NAME="hello_llm Coverage Results" MODIFIED="1777301590948" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src" />
   </component>

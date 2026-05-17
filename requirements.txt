@@ -7,4 +7,5 @@ pydantic
 chromadb
 llama-index-vector-stores-chroma
 requests
-
+langgraph
+langchain-core

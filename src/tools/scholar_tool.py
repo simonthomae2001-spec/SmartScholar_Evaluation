@@ -24,7 +24,7 @@ class ScholarTool:
         params = {
             "query": query,
             "limit": limit,
-            "fields": "title,abstract,authors,year,openAccessPdf,url"
+            "fields": "title,abstract,authors,year,openAccessPdf,url,citationCount"
         }
         
         headers = {}
@@ -55,6 +55,7 @@ class ScholarTool:
                     "abstract": item.get("abstract"),
                     "authors": authors,
                     "year": item.get("year"),
+                    "citationCount": item.get("citationCount", 0),
                     "openAccessPdf": pdf_url,
                     "url": item.get("url")
                 })

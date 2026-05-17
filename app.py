@@ -1,36 +1,63 @@
+"""
+SmartScholar — Agentic Research Copilot (Human-in-the-Loop UI)
+
+This Streamlit application drives a step-by-step research workflow
+orchestrated by LangGraph.  The user reviews and refines search
+queries, curates the paper selection, and controls when to advance
+to the next stage.
+
+Workflow steps (mapped to ``st.session_state.workflow_step``):
+    idle          → waiting for input
+    enhancing     → LangGraph graph is running (gatekeeper → enhance)
+    query_review  → user edits / accepts generated queries
+    searching     → Semantic Scholar search + scoring in progress
+    paper_review  → user curates the ranked paper list
+    done          → final selection with citation IDs assigned
+"""
+
 import streamlit as st
 import sys
 import os
 from datetime import datetime
 
-# Add src directory to the Python path
+# ------------------------------------------------------------------ #
+#  Path setup
+# ------------------------------------------------------------------ #
 current_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.join(current_dir, "src")
 if src_dir not in sys.path:
     sys.path.append(src_dir)
 
 from src.core.model_factory import ModelFactory
-from src.agents.researcher_agent import ResearcherAgent
-from src.core.vector_store import VectorEngine
+from src.core.graph_state import ResearchConfig, GraphState
+from src.core.orchestrator import (
+    build_graph,
+    researcher_search_node,
+    analyst_node,
+)
 
-# Page configuration
+# ------------------------------------------------------------------ #
+#  Page configuration
+# ------------------------------------------------------------------ #
 st.set_page_config(
     page_title="SmartScholar",
     page_icon="🔬",
     layout="centered",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
-# Gemini Aesthetics - Custom CSS
+# ------------------------------------------------------------------ #
+#  Gemini Aesthetics — Custom CSS
+# ------------------------------------------------------------------ #
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
-    
+
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif;
         background-color: #f8f9fa;
     }
-    
+
     .main-title {
         font-size: 3.5rem;
         font-weight: 600;
@@ -40,7 +67,7 @@ st.markdown("""
         margin-bottom: 0.5rem;
         text-align: center;
     }
-    
+
     /* Chat Message Styling */
     .stChatMessage {
         border-radius: 16px;
@@ -50,9 +77,16 @@ st.markdown("""
         background-color: #ffffff;
         padding: 1.5rem;
     }
-    
-    /* Modern Polish for Status & Expander */
 
+    /* User avatar icon — match the blue brand palette */
+    [data-testid="stChatMessageAvatarUser"] {
+        background-color: #1a73e8 !important;
+    }
+    [data-testid="stChatMessage"] [data-testid="stChatMessageAvatar"] {
+        background-color: #1a73e8 !important;
+    }
+
+    /* Modern Polish for Status & Expander */
     .stStatusContainer, .stExpander {
         padding: 1.2rem !important;
         background-color: #ffffff !important;
@@ -61,172 +95,477 @@ st.markdown("""
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02) !important;
     }
 
+    /* Score badge */
+    .score-badge {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-left: 8px;
+    }
+    .score-high   { background: #e6f4ea; color: #1e7e34; }
+    .score-mid    { background: #fef7e0; color: #b45309; }
+    .score-low    { background: #fce8e6; color: #c5221f; }
+
+    /* Profile chip */
+    .profile-chip {
+        display: inline-block;
+        padding: 4px 14px;
+        border-radius: 16px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        background: linear-gradient(135deg, #e8eaf6, #c5cae9);
+        color: #283593;
+        margin-top: 4px;
+    }
+
+    /* Step indicator */
+    .step-indicator {
+        text-align: center;
+        padding: 8px 0;
+        color: #5f6368;
+        font-size: 0.9rem;
+        margin-bottom: 1rem;
+    }
+    .step-indicator .current-step {
+        color: #1a73e8;
+        font-weight: 600;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# Initialize Session State
-if "research_review" not in st.session_state:
-    st.session_state.research_review = None
-if "papers" not in st.session_state:
-    st.session_state.papers = []
-if "is_running" not in st.session_state:
-    st.session_state.is_running = False
-if "current_query" not in st.session_state:
-    st.session_state.current_query = None
-if "has_run" not in st.session_state:
-    st.session_state.has_run = False
-if "trace_steps" not in st.session_state:
-    st.session_state.trace_steps = []
 
-# Sidebar for settings
+# ------------------------------------------------------------------ #
+#  Session-state initialisation
+# ------------------------------------------------------------------ #
+_DEFAULTS = {
+    "workflow_step": "idle",
+    "current_query": None,
+    "config_profile": "medium",
+    "graph_state": None,          # dict — mirrors GraphState
+    "search_queries_edit": None,  # list — mutable copy for the review UI
+    "trace_steps": [],
+    "query_gen": 0,               # bumped on every Regenerate to force fresh widget keys
+}
+
+for key, default in _DEFAULTS.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
+
+
+# ------------------------------------------------------------------ #
+#  Helpers
+# ------------------------------------------------------------------ #
+
+def _score_badge(score: int) -> str:
+    """Return an HTML badge coloured by score tier."""
+    if score >= 70:
+        cls = "score-high"
+    elif score >= 40:
+        cls = "score-mid"
+    else:
+        cls = "score-low"
+    return f'<span class="score-badge {cls}">{score}/100</span>'
+
+
+def _reset_workflow():
+    """Clear all workflow state and return to idle."""
+    for key, default in _DEFAULTS.items():
+        st.session_state[key] = default
+
+
+# ------------------------------------------------------------------ #
+#  Sidebar
+# ------------------------------------------------------------------ #
 st.sidebar.title("⚙️ Settings")
+
 try:
     model_name = ModelFactory.get_model_name()
     st.sidebar.success(f"**Active Model:** `{model_name}`")
 except Exception as e:
     st.sidebar.error(f"Error loading model name: {e}")
 
-# Main UI
+st.sidebar.markdown("---")
+st.sidebar.subheader("Research Profile")
+
+profile_labels = {
+    "fast": "⚡ Fast — quick scan",
+    "medium": "⚖️ Medium — balanced",
+    "pro": "🔬 Pro — exhaustive",
+}
+selected_profile = st.sidebar.radio(
+    "Choose depth",
+    options=list(profile_labels.keys()),
+    format_func=lambda k: profile_labels[k],
+    index=list(profile_labels.keys()).index(st.session_state.config_profile),
+    key="profile_radio",
+    disabled=st.session_state.workflow_step != "idle",
+)
+# Sync back (only when idle to avoid mid-run changes)
+if st.session_state.workflow_step == "idle":
+    st.session_state.config_profile = selected_profile
+
+cfg = ResearchConfig.from_profile(st.session_state.config_profile)
+st.sidebar.markdown(
+    f"<div class='profile-chip'>"
+    f"Queries: {cfg.max_queries} &nbsp;·&nbsp; "
+    f"Results/query: {cfg.results_per_query} &nbsp;·&nbsp; "
+    f"Active papers: {cfg.active_paper_count}</div>",
+    unsafe_allow_html=True,
+)
+
+# Reset button (always available when not idle)
+if st.session_state.workflow_step != "idle":
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🔄 Start Over", use_container_width=True):
+        _reset_workflow()
+        st.rerun()
+
+
+# ------------------------------------------------------------------ #
+#  Header
+# ------------------------------------------------------------------ #
 st.markdown('<h1 class="main-title">SmartScholar</h1>', unsafe_allow_html=True)
-st.markdown('<p style="text-align: center; color: #5f6368;">Agentic Research Copilot</p>', unsafe_allow_html=True)
+st.markdown(
+    '<p style="text-align: center; color: #5f6368;">'
+    "Agentic Research Copilot</p>",
+    unsafe_allow_html=True,
+)
 
-# Chat-style input for research questions
-query = st.chat_input("What would you like to research today?", disabled=st.session_state.is_running)
+# Step progress indicator
+_STEP_LABELS = {
+    "idle": "Ready",
+    "enhancing": "Generating queries…",
+    "query_review": "Review Queries",
+    "searching": "Searching papers…",
+    "paper_review": "Review Papers",
+    "done": "Research Finalised ✓",
+}
+current_label = _STEP_LABELS.get(st.session_state.workflow_step, "")
+if st.session_state.workflow_step != "idle":
+    st.markdown(
+        f'<div class="step-indicator">Step: '
+        f'<span class="current-step">{current_label}</span></div>',
+        unsafe_allow_html=True,
+    )
 
-# Interaction Flow & Execution
-if query:
-    st.session_state.is_running = True
-    st.session_state.has_run = False
-    st.session_state.current_query = query
-    st.session_state.research_review = None
-    st.session_state.papers = []
-    st.session_state.trace_steps = []
-    st.rerun()
 
-if st.session_state.current_query:
-    if st.session_state.is_running:
-        # Inject CSS for the Stop button
-        st.markdown("""
-            <style>
-            .st-key-stop_btn button {
-                background-color: #ea4335 !important;
-                color: white !important;
-                border-radius: 4px !important;
-                border: none !important;
-                padding: 6px 16px !important;
-                font-size: 14px !important;
-                margin-bottom: 10px !important;
-            }
-            .st-key-stop_btn button:hover {
-                background-color: #d93025 !important;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-    
-        if st.button("⏹ Stop", key="stop_btn", help="Stop Generation"):
-            st.session_state.is_running = False
-            st.session_state.has_run = False
-            st.session_state.current_query = None
-            st.session_state.research_review = None
-            st.session_state.papers = []
-            st.session_state.trace_steps = []
-            st.rerun()
+# ================================================================== #
+#  STEP 0 — Idle: accept user input
+# ================================================================== #
+if st.session_state.workflow_step == "idle":
+    query = st.chat_input("What would you like to research today?")
+    if query:
+        st.session_state.current_query = query
+        st.session_state.workflow_step = "enhancing"
+        st.rerun()
 
-    # Display the user's query
+
+# ================================================================== #
+#  STEP 1 — Enhancing: run the LangGraph (gatekeeper → enhance)
+# ================================================================== #
+elif st.session_state.workflow_step == "enhancing":
     with st.chat_message("user"):
         st.write(st.session_state.current_query)
 
-    if st.session_state.is_running:
-        # Agent-driven research pipeline
-        with st.status("🔍 SmartScholar is investigating...", expanded=True) as status:
-            trace = []
+    with st.status("🧠 Expanding your query into academic search terms…", expanded=True) as status:
+        trace = []
 
-            def log(msg):
-                """Write to the live status container AND record for replay."""
-                st.write(msg)
-                trace.append(msg)
+        def _log(msg):
+            st.write(msg)
+            trace.append(msg)
 
-            # --- Step 1: Query Expansion ---
-            log("🧩 **Step 1 — Generating refined search queries...**")
-            agent = ResearcherAgent()
-            queries = agent.generate_search_queries(st.session_state.current_query)
-            log(f"   ↳ Expanded into **{len(queries)}** queries.")
+        _log("🛡️ **Gatekeeper** — validating query…")
+        graph = build_graph()
+        initial_state: GraphState = {
+            "user_query": st.session_state.current_query,
+            "config_profile": st.session_state.config_profile,
+        }
+        result = graph.invoke(initial_state)
+        _log(f"✅ Query accepted. Profile: **{st.session_state.config_profile}**")
 
-            # --- Step 2: Multi-query search + deduplication ---
-            log("🔎 **Step 2 — Searching Semantic Scholar...**")
-            papers = agent.execute_research(
-                user_input=st.session_state.current_query,
-                queries=queries,
-                limit_per_query=5,
-                status_callback=log,
+        queries = result.get("search_queries", [])
+        _log(f"🧩 Generated **{len(queries)}** search queries.")
+        for i, q in enumerate(queries, 1):
+            _log(f"   {i}. `{q}`")
+
+        st.session_state.graph_state = result
+        st.session_state.search_queries_edit = list(queries)
+        st.session_state.trace_steps = trace
+        status.update(label="Queries Generated", state="complete", expanded=False)
+
+    st.session_state.workflow_step = "query_review"
+    st.rerun()
+
+
+# ================================================================== #
+#  STEP 2 — Query Review: human edits / accepts queries
+# ================================================================== #
+elif st.session_state.workflow_step == "query_review":
+    with st.chat_message("user"):
+        st.write(st.session_state.current_query)
+
+    # Replay trace
+    with st.status("Queries Generated", state="complete", expanded=False):
+        for step in st.session_state.trace_steps:
+            st.write(step)
+
+    st.markdown("### ✏️ Review Search Queries")
+    st.caption(
+        "Edit the queries below, uncheck any you want to skip, "
+        "then accept or regenerate."
+    )
+
+    queries = st.session_state.search_queries_edit
+    updated_queries: list[str] = []
+    enabled_flags: list[bool] = []
+
+    for i, q in enumerate(queries):
+        col_check, col_input = st.columns([0.08, 0.92])
+        with col_check:
+            gen = st.session_state.query_gen
+            enabled = st.checkbox(
+                "Use", value=True, key=f"q_enable_{gen}_{i}", label_visibility="collapsed"
             )
-            st.session_state.papers = papers
+        with col_input:
+            gen = st.session_state.query_gen
+            edited = st.text_input(
+                f"Query {i + 1}",
+                value=q,
+                key=f"q_text_{gen}_{i}",
+                label_visibility="collapsed",
+            )
+        enabled_flags.append(enabled)
+        updated_queries.append(edited)
 
-            if papers:
-                # --- Step 3: Index into ChromaDB ---
-                log(f"📥 **Step 3 — Indexing {len(papers)} papers into ChromaDB...**")
-                vector_engine = VectorEngine()
-                index = vector_engine.index_papers(papers)
+    col_regen, col_accept = st.columns(2)
 
-                # --- Step 4: Literature Synthesis ---
-                log("🧠 **Step 4 — Generating Literature Synthesis...**")
-                query_engine = vector_engine.get_query_engine(index)
-                response = query_engine.query(
-                    f"Provide a comprehensive literature review summarizing "
-                    f"the key findings from these papers regarding: "
-                    f"{st.session_state.current_query}"
-                )
+    with col_regen:
+        if st.button("🔁 Regenerate", use_container_width=True):
+            # Bump generation counter so the next render creates fresh widget keys
+            st.session_state.query_gen += 1
+            st.session_state.workflow_step = "enhancing"
+            st.rerun()
 
-                st.session_state.research_review = str(response)
-                status.update(label="Research Complete", state="complete", expanded=False)
-                st.session_state.has_run = True
+    with col_accept:
+        if st.button("✅ Accept & Search", type="primary", use_container_width=True):
+            # Keep only checked queries
+            accepted = [
+                q for q, ok in zip(updated_queries, enabled_flags) if ok and q.strip()
+            ]
+            if not accepted:
+                st.error("Please keep at least one query enabled.")
             else:
-                log("❌ **No relevant papers found.**")
-                status.update(label="Search Failed", state="error", expanded=True)
-                st.session_state.has_run = True
+                gs = st.session_state.graph_state
+                gs["search_queries"] = accepted
+                st.session_state.graph_state = gs
+                st.session_state.workflow_step = "searching"
+                st.rerun()
 
-            st.session_state.trace_steps = trace
 
-        st.session_state.is_running = False
-        st.rerun()
+# ================================================================== #
+#  STEP 3 — Searching: fetch + score papers
+# ================================================================== #
+elif st.session_state.workflow_step == "searching":
+    with st.chat_message("user"):
+        st.write(st.session_state.current_query)
 
-    elif st.session_state.has_run:
-        # Replay the recorded trace steps in a static status container
-        if st.session_state.research_review:
-            with st.status("Research Complete", expanded=False, state="complete"):
-                for step in st.session_state.trace_steps:
-                    st.write(step)
-        else:
-            with st.status("Search Failed", expanded=True, state="error"):
-                for step in st.session_state.trace_steps:
-                    st.write(step)
+    with st.status("🔍 Searching Semantic Scholar & scoring papers…", expanded=True) as status:
+        trace = []
 
-# Persistent Result Architecture: Literature Review
-if st.session_state.research_review:
-    st.markdown("---")
-    with st.expander("📄 Final Literature Review", expanded=True):
-        st.markdown(st.session_state.research_review)
+        def _log_s(msg):
+            st.write(msg)
+            trace.append(msg)
 
-        st.markdown("---")
+        gs = st.session_state.graph_state
 
-        # Download Functionality
-        today = datetime.now().strftime("%Y-%m-%d")
-        filename = f"research_review_{today}.md"
+        _log_s(f"📡 Executing **{len(gs['search_queries'])}** queries "
+               f"({cfg.results_per_query} results each)…")
 
-        st.download_button(
-            label="📥 Download Review (.md)",
-            data=st.session_state.research_review,
-            file_name=filename,
-            mime="text/markdown"
-        )
+        result = researcher_search_node(gs)
 
-        # Sources
-        st.markdown("### 📚 Referenced Sources")
-        for paper in st.session_state.papers:
-            title = paper.get("title", "Unknown Title")
-            year = paper.get("year", "Unknown Year")
-            url = paper.get("url")
+        active = result.get("active_papers", [])
+        discarded = result.get("discarded_papers", [])
+
+        _log_s(f"✅ Retrieved & scored papers.")
+        _log_s(f"   ↳ **{len(active)} active** · {len(discarded)} in reserve pool")
+
+        gs.update(result)
+        st.session_state.graph_state = gs
+        st.session_state.trace_steps = trace
+
+        status.update(label="Papers Ranked", state="complete", expanded=False)
+
+    st.session_state.workflow_step = "paper_review"
+    st.rerun()
+
+
+# ================================================================== #
+#  STEP 4 — Paper Review: curate the active set
+# ================================================================== #
+elif st.session_state.workflow_step == "paper_review":
+    with st.chat_message("user"):
+        st.write(st.session_state.current_query)
+
+    # Show search trace
+    with st.status("Papers Ranked", state="complete", expanded=False):
+        for step in st.session_state.trace_steps:
+            st.write(step)
+
+    gs = st.session_state.graph_state
+    active = gs.get("active_papers", [])
+    discarded = gs.get("discarded_papers", [])
+
+    st.markdown("### 📄 Review Active Papers")
+    st.caption(
+        f"Top {len(active)} papers ranked by relevance. "
+        "Uncheck to remove, or add from the reserve pool."
+    )
+
+    keep_flags: list[bool] = []
+
+    for i, paper in enumerate(active):
+        score = paper.get("relevance_score", 0)
+        title = paper.get("title", "Untitled")
+        year = paper.get("year", "n.d.")
+        cites = paper.get("citationCount", 0)
+        abstract = paper.get("abstract") or "No abstract available."
+        authors = paper.get("authors", [])
+        url = paper.get("url", "")
+
+        badge = _score_badge(score)
+        with st.expander(f"**{title}** ({year}) {badge}", expanded=False):
+            st.markdown(
+                f"**Authors:** {', '.join(authors[:5])}"
+                f"{'…' if len(authors) > 5 else ''}"
+            )
+            st.markdown(f"**Citations:** {cites} &nbsp;·&nbsp; **Year:** {year}")
+            st.markdown(f"**Relevance Score:** {score}/100")
             if url:
-                st.markdown(f"- **[{title}]({url})** ({year})")
-            else:
-                st.markdown(f"- **{title}** ({year})")
+                st.markdown(f"[🔗 View on Semantic Scholar]({url})")
+            st.markdown("---")
+            st.markdown(f"**Abstract:** {abstract}")
+
+        keep = st.checkbox(
+            f"Include _{title[:60]}_",
+            value=True,
+            key=f"paper_keep_{i}",
+        )
+        keep_flags.append(keep)
+
+    st.markdown("---")
+
+    # ---- Add alternative from discarded pool ---- #
+    col_add, col_fin = st.columns(2)
+
+    with col_add:
+        add_disabled = len(discarded) == 0
+        if st.button(
+            "➕ Add Alternative Paper",
+            use_container_width=True,
+            disabled=add_disabled,
+            help="Pull the next-highest-scored paper from the reserve pool",
+        ):
+            if discarded:
+                promoted = discarded.pop(0)
+                active.append(promoted)
+                gs["active_papers"] = active
+                gs["discarded_papers"] = discarded
+                st.session_state.graph_state = gs
+                st.rerun()
+
+    with col_fin:
+        if st.button(
+            "🚀 Finalize Research",
+            type="primary",
+            use_container_width=True,
+        ):
+            # Remove unchecked papers
+            final_active = []
+            newly_discarded = list(discarded)  # copy
+            for paper, keep in zip(active, keep_flags):
+                if keep:
+                    final_active.append(paper)
+                else:
+                    newly_discarded.insert(0, paper)
+
+            # Assign citation IDs
+            for idx, paper in enumerate(final_active, start=1):
+                paper["citation_id"] = f"[{idx}]"
+
+            gs["active_papers"] = final_active
+            gs["discarded_papers"] = newly_discarded
+
+            # Run the analyst stub
+            analyst_result = analyst_node(gs)
+            gs.update(analyst_result)
+
+            st.session_state.graph_state = gs
+            st.session_state.workflow_step = "done"
+            st.rerun()
+
+    # Show reserve pool size
+    if discarded:
+        st.caption(f"📦 Reserve pool: {len(discarded)} papers available")
+
+
+# ================================================================== #
+#  STEP 5 — Done: show final selection with citation IDs
+# ================================================================== #
+elif st.session_state.workflow_step == "done":
+    with st.chat_message("user"):
+        st.write(st.session_state.current_query)
+
+    gs = st.session_state.graph_state
+    active = gs.get("active_papers", [])
+    review = gs.get("final_review", "")
+
+    st.markdown("### ✅ Research Finalised")
+    st.success(
+        f"**{len(active)} papers** selected and assigned citation IDs. "
+        "The state is ready for the next agent."
+    )
+
+    # Citation table
+    st.markdown("#### 📚 Final Paper Selection")
+    for paper in active:
+        cid = paper.get("citation_id", "")
+        title = paper.get("title", "Untitled")
+        year = paper.get("year", "n.d.")
+        score = paper.get("relevance_score", 0)
+        url = paper.get("url", "")
+        abstract = paper.get("abstract") or "No abstract available."
+        authors = paper.get("authors", [])
+        cites = paper.get("citationCount", 0)
+
+        badge = _score_badge(score)
+        with st.expander(f"{cid} **{title}** ({year}) {badge}", expanded=False):
+            st.markdown(
+                f"**Authors:** {', '.join(authors[:5])}"
+                f"{'…' if len(authors) > 5 else ''}"
+            )
+            st.markdown(f"**Citations:** {cites}")
+            if url:
+                st.markdown(f"[🔗 View on Semantic Scholar]({url})")
+            st.markdown("---")
+            st.markdown(f"{abstract}")
+
+    # Analyst stub output
+    if review:
+        st.markdown("---")
+        with st.expander("📝 Analyst Output (Stub)", expanded=True):
+            st.markdown(review)
+
+    # Download final state as JSON
+    st.markdown("---")
+    import json
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    state_json = json.dumps(gs, indent=2, ensure_ascii=False, default=str)
+    st.download_button(
+        label="📥 Download Research State (.json)",
+        data=state_json,
+        file_name=f"smartscholar_state_{today}.json",
+        mime="application/json",
+    )
