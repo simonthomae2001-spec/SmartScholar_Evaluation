@@ -325,32 +325,40 @@ elif st.session_state.workflow_step == "query_review":
         st.info(f"🧠 **Agent Search Strategy:** {strategy}")
 
     st.markdown("### ✏️ Review Search Queries")
+    st.markdown("**Foundational Query (Always Included):**")
+    st.info(f"**`{st.session_state.current_query}`**")
+
+    st.markdown("#### Optional Suggested Expansions")
     st.caption(
-        "Edit the queries below, uncheck any you want to skip, "
+        "Edit the optional queries below, uncheck any you want to skip, "
         "then accept or regenerate."
     )
 
-    queries = st.session_state.search_queries_edit
+    # Filter out any query that exactly matches the foundational query to avoid redundancy
+    queries = [q for q in st.session_state.search_queries_edit if q.strip().lower() != st.session_state.current_query.strip().lower()]
     updated_queries: list[str] = []
     enabled_flags: list[bool] = []
 
-    for i, q in enumerate(queries):
-        col_check, col_input = st.columns([0.08, 0.92])
-        with col_check:
-            gen = st.session_state.query_gen
-            enabled = st.checkbox(
-                "Use", value=True, key=f"q_enable_{gen}_{i}", label_visibility="collapsed"
-            )
-        with col_input:
-            gen = st.session_state.query_gen
-            edited = st.text_input(
-                f"Query {i + 1}",
-                value=q,
-                key=f"q_text_{gen}_{i}",
-                label_visibility="collapsed",
-            )
-        enabled_flags.append(enabled)
-        updated_queries.append(edited)
+    if not queries:
+        st.info("No additional enhanced queries were generated. The search will proceed with only your foundational query.")
+    else:
+        for i, q in enumerate(queries):
+            col_check, col_input = st.columns([0.08, 0.92])
+            with col_check:
+                gen = st.session_state.query_gen
+                enabled = st.checkbox(
+                    "Use", value=True, key=f"q_enable_{gen}_{i}", label_visibility="collapsed"
+                )
+            with col_input:
+                gen = st.session_state.query_gen
+                edited = st.text_input(
+                    f"Query {i + 1}",
+                    value=q,
+                    key=f"q_text_{gen}_{i}",
+                    label_visibility="collapsed",
+                )
+            enabled_flags.append(enabled)
+            updated_queries.append(edited)
 
     col_regen, col_accept = st.columns(2)
 
@@ -367,14 +375,11 @@ elif st.session_state.workflow_step == "query_review":
             accepted = [
                 q for q, ok in zip(updated_queries, enabled_flags) if ok and q.strip()
             ]
-            if not accepted:
-                st.error("Please keep at least one query enabled.")
-            else:
-                gs = st.session_state.graph_state
-                gs["search_queries"] = accepted
-                st.session_state.graph_state = gs
-                st.session_state.workflow_step = "searching"
-                st.rerun()
+            gs = st.session_state.graph_state
+            gs["search_queries"] = [st.session_state.current_query] + accepted
+            st.session_state.graph_state = gs
+            st.session_state.workflow_step = "searching"
+            st.rerun()
 
 
 # ================================================================== #

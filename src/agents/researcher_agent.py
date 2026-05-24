@@ -31,9 +31,10 @@ class ResearcherAgent:
     # ------------------------------------------------------------------ #
     QUERY_EXPANSION_PROMPT = (
         "You are a research assistant specializing in academic literature search. "
-        "Given a user's research topic, generate EXACTLY {num_queries} highly "
-        "specific, scientific search queries that would surface the most relevant "
-        "papers on the Semantic Scholar API.\n\n"
+        "Given a user's research topic, generate exactly {num_queries} ADDITIONAL search queries. "
+        "These queries MUST remain extremely close to the core theme of the user's original prompt "
+        "to support a cohesive joint analysis. Do not drift into broader or tangentially related topics. "
+        "Use concise academic keywords.\n\n"
         "Rules:\n"
         "- Each query should target a different facet, sub-topic, or methodology "
         "related to the user's topic.\n"
@@ -107,7 +108,7 @@ class ResearcherAgent:
             num_queries=num_queries,
         )
 
-        fallback_strategy = "Fallback: using the original query directly."
+        fallback_strategy = "Fallback: could not generate additional queries."
 
         try:
             response = self.llm.complete(prompt)
@@ -135,8 +136,8 @@ class ResearcherAgent:
         except Exception as e:
             print(f"[ResearcherAgent] Query expansion failed: {e}")
 
-        # Fallback: use the original query as-is
-        return ([user_input], fallback_strategy)
+        # Fallback: return empty list
+        return ([], fallback_strategy)
 
     # ------------------------------------------------------------------ #
     #  Profile-aware prompt enhancement
@@ -206,7 +207,11 @@ class ResearcherAgent:
         """
 
         if queries is None:
-            queries = self.generate_search_queries(user_input)
+            queries = self.generate_search_queries(user_input, num_queries=3)[0]
+            
+        # If no queries were generated/passed, search the user_input
+        if not queries:
+            queries = [user_input]
 
         all_papers: list[dict] = []
         seen_ids: set[str] = set()
