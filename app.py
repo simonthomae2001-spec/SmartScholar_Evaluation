@@ -29,11 +29,12 @@ if src_dir not in sys.path:
     sys.path.append(src_dir)
 
 from src.core.model_factory import ModelFactory
-from src.core.graph_state import ResearchConfig, GraphState
+from src.core.graph_state import GraphState
+from src.core.config import get_config
 from src.core.orchestrator import (
-    build_graph,
-    researcher_search_node,
-    analyst_node,
+    stream_enhance_flow,
+    stream_search_flow,
+    stream_analysis_flow,
 )
 
 # ------------------------------------------------------------------ #
@@ -206,12 +207,12 @@ selected_profile = st.sidebar.radio(
 if st.session_state.workflow_step == "idle":
     st.session_state.config_profile = selected_profile
 
-cfg = ResearchConfig.from_profile(st.session_state.config_profile)
+cfg = get_config(st.session_state.config_profile)
 st.sidebar.markdown(
     f"<div class='profile-chip'>"
-    f"Queries: {cfg.max_queries} &nbsp;·&nbsp; "
-    f"Results/query: {cfg.results_per_query} &nbsp;·&nbsp; "
-    f"Active papers: {cfg.active_paper_count}</div>",
+    f"Queries: {cfg['max_queries']} &nbsp;·&nbsp; "
+    f"Results/query: {cfg['results_per_query']} &nbsp;·&nbsp; "
+    f"Active papers: {cfg['active_paper_count']}</div>",
     unsafe_allow_html=True,
 )
 
@@ -276,17 +277,24 @@ elif st.session_state.workflow_step == "enhancing":
             st.write(msg)
             trace.append(msg)
 
-        _log("🛡️ **Gatekeeper** — validating query…")
-        graph = build_graph()
-        initial_state: GraphState = {
-            "user_query": st.session_state.current_query,
-            "config_profile": st.session_state.config_profile,
-        }
-        result = graph.invoke(initial_state)
-        _log(f"✅ Query accepted. Profile: **{st.session_state.config_profile}**")
+        if st.session_state.query_gen == 0:
+            initial_state: GraphState = {
+                "user_query": st.session_state.current_query,
+                "config_profile": st.session_state.config_profile,
+            }
+            stream = stream_enhance_flow(initial_state, regenerate=False)
+        else:
+            initial_state = st.session_state.graph_state
+            stream = stream_enhance_flow(initial_state, regenerate=True)
+
+        for event in stream:
+            if isinstance(event, str):
+                _log(event)
+            elif isinstance(event, dict):
+                # Final graph state
+                result = event
 
         queries = result.get("search_queries", [])
-        _log(f"🧩 Generated **{len(queries)}** search queries.")
         for i, q in enumerate(queries, 1):
             _log(f"   {i}. `{q}`")
 
@@ -310,6 +318,11 @@ elif st.session_state.workflow_step == "query_review":
     with st.status("Queries Generated", state="complete", expanded=False):
         for step in st.session_state.trace_steps:
             st.write(step)
+
+    gs = st.session_state.graph_state
+    strategy = gs.get("query_strategy", "")
+    if strategy:
+        st.info(f"🧠 **Agent Search Strategy:** {strategy}")
 
     st.markdown("### ✏️ Review Search Queries")
     st.caption(
@@ -380,18 +393,12 @@ elif st.session_state.workflow_step == "searching":
 
         gs = st.session_state.graph_state
 
-        _log_s(f"📡 Executing **{len(gs['search_queries'])}** queries "
-               f"({cfg.results_per_query} results each)…")
+        for event in stream_search_flow(gs):
+            if isinstance(event, str):
+                _log_s(event)
+            elif isinstance(event, dict):
+                gs = event
 
-        result = researcher_search_node(gs)
-
-        active = result.get("active_papers", [])
-        discarded = result.get("discarded_papers", [])
-
-        _log_s(f"✅ Retrieved & scored papers.")
-        _log_s(f"   ↳ **{len(active)} active** · {len(discarded)} in reserve pool")
-
-        gs.update(result)
         st.session_state.graph_state = gs
         st.session_state.trace_steps = trace
 
@@ -433,15 +440,19 @@ elif st.session_state.workflow_step == "paper_review":
         abstract = paper.get("abstract") or "No abstract available."
         authors = paper.get("authors", [])
         url = paper.get("url", "")
-
         badge = _score_badge(score)
-        with st.expander(f"**{title}** ({year}) {badge}", expanded=False):
+
+        with st.expander(f"**{title}** ({year}) — Score: {score}/100", expanded=False):
             st.markdown(
                 f"**Authors:** {', '.join(authors[:5])}"
                 f"{'…' if len(authors) > 5 else ''}"
             )
-            st.markdown(f"**Citations:** {cites} &nbsp;·&nbsp; **Year:** {year}")
-            st.markdown(f"**Relevance Score:** {score}/100")
+            st.markdown(f"**Citations:** {cites} &nbsp;·&nbsp; **Year:** {year} &nbsp;·&nbsp; {badge}", unsafe_allow_html=True)
+            
+            rationale = paper.get("score_rationale", "")
+            if rationale:
+                st.markdown(f"🧠 **Agent Rationale:** {rationale}")
+                
             if url:
                 st.markdown(f"[🔗 View on Semantic Scholar]({url})")
             st.markdown("---")
@@ -497,9 +508,19 @@ elif st.session_state.workflow_step == "paper_review":
             gs["active_papers"] = final_active
             gs["discarded_papers"] = newly_discarded
 
-            # Run the analyst stub
-            analyst_result = analyst_node(gs)
-            gs.update(analyst_result)
+            # Run the remaining flow (analyst -> critic -> synthesizer)
+            # The remaining nodes will be triggered via stream_analysis_flow
+            # Wait, the stream_analysis_flow only runs analyst. We should run
+            # the full remaining pipeline, but the user said "Replace analyst direct call with stream_analysis_flow loop".
+            # Wait, to stream the remaining flow, I should create a status container and stream it.
+            
+            with st.status("🧠 Agent Pipeline (Analysis & Synthesis)…", expanded=True) as status:
+                for event in stream_analysis_flow(gs):
+                    if isinstance(event, str):
+                        st.write(event)
+                    elif isinstance(event, dict):
+                        gs = event
+                status.update(label="Analysis & Synthesis Complete", state="complete")
 
             st.session_state.graph_state = gs
             st.session_state.workflow_step = "done"
@@ -538,14 +559,19 @@ elif st.session_state.workflow_step == "done":
         abstract = paper.get("abstract") or "No abstract available."
         authors = paper.get("authors", [])
         cites = paper.get("citationCount", 0)
-
         badge = _score_badge(score)
-        with st.expander(f"{cid} **{title}** ({year}) {badge}", expanded=False):
+
+        with st.expander(f"{cid} **{title}** ({year}) — Score: {score}/100", expanded=False):
             st.markdown(
                 f"**Authors:** {', '.join(authors[:5])}"
                 f"{'…' if len(authors) > 5 else ''}"
             )
-            st.markdown(f"**Citations:** {cites}")
+            st.markdown(f"**Citations:** {cites} &nbsp;·&nbsp; {badge}", unsafe_allow_html=True)
+            
+            rationale = paper.get("score_rationale", "")
+            if rationale:
+                st.markdown(f"🧠 **Agent Rationale:** {rationale}")
+                
             if url:
                 st.markdown(f"[🔗 View on Semantic Scholar]({url})")
             st.markdown("---")

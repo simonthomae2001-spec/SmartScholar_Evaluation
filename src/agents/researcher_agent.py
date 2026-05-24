@@ -2,17 +2,19 @@
 ResearcherAgent: Agentic query expansion and multi-query research orchestration.
 
 This agent takes a user's natural-language research topic, uses an LLM to expand it
-into 3-5 precise scientific search queries, executes each against the Semantic Scholar
+into refined scientific search queries, executes each against the Semantic Scholar
 API via ScholarTool, and deduplicates the aggregated results by paperId.
 
-Extended with:
-    enhance_prompt()      – profile-aware wrapper around generate_search_queries.
-    evaluate_papers()     – LLM-based relevance scoring (0-100) with heuristic fallback.
+Key capabilities:
+    enhance_prompt()      – profile-aware query expansion with strategy trace.
+    evaluate_papers()     – LLM-based relevance scoring (0-100) with per-paper
+                            rationale and heuristic fallback.
 """
 
 import json
 import re
 from datetime import datetime
+from typing import Any
 
 from src.core.model_factory import ModelFactory
 from src.tools.scholar_tool import ScholarTool
@@ -29,20 +31,32 @@ class ResearcherAgent:
     # ------------------------------------------------------------------ #
     QUERY_EXPANSION_PROMPT = (
         "You are a research assistant specializing in academic literature search. "
-        "Given a user's research topic, generate a JSON array of 3 to 5 highly "
+        "Given a user's research topic, generate EXACTLY {num_queries} highly "
         "specific, scientific search queries that would surface the most relevant "
         "papers on the Semantic Scholar API.\n\n"
         "Rules:\n"
         "- Each query should target a different facet, sub-topic, or methodology "
         "related to the user's topic.\n"
+        "- Use concise academic concepts, NOT full sentences.\n"
         "- Use precise scientific terminology.\n"
-        "- Return ONLY a valid JSON array of strings — no markdown, no explanation.\n\n"
-        "Example output:\n"
-        '[\"deep reinforcement learning for robotic manipulation\", '
-        '\"sim-to-real transfer policy learning\", '
-        '\"sample efficient model-based RL robotics\"]\n\n'
+        "- Return ONLY a valid JSON object — no markdown, no explanation.\n\n"
+        "The JSON object MUST have exactly two keys:\n"
+        '  "strategy": A 1-2 sentence internal monologue explaining why you '
+        "chose these specific search angles.\n"
+        '  "queries": A JSON array of EXACTLY {num_queries} query strings.\n\n'
+        "Example output (Note: you MUST generate EXACTLY {num_queries} queries, not 3!):\n"
+        '{{\n'
+        '  "strategy": "I focus on the core algorithm, its real-world deployment '
+        'challenges, and data-efficiency improvements to cover theory, practice, '
+        'and scalability.",\n'
+        '  "queries": [\n'
+        '    "deep reinforcement learning robotic manipulation",\n'
+        '    "sim-to-real transfer policy learning",\n'
+        '    "sample efficient model-based RL robotics"\n'
+        '  ]\n'
+        '}}\n\n'
         "User topic: {user_input}\n\n"
-        "JSON array:"
+        "JSON object:"
     )
 
     # ------------------------------------------------------------------ #
@@ -59,8 +73,11 @@ class ResearcherAgent:
         "User topic: {user_query}\n\n"
         "Papers (JSON array of objects with keys id, title, abstract, year, citationCount):\n"
         "{papers_json}\n\n"
-        "Return ONLY a valid JSON array of objects with keys \"id\" (the paper index) "
-        "and \"score\" (integer 0-100). No markdown, no explanation.\n\n"
+        "Return ONLY a valid JSON array of objects with keys:\n"
+        '  "id" (the paper index, integer),\n'
+        '  "score" (integer 0-100),\n'
+        '  "rationale" (1 sentence explaining the score).\n\n'
+        "No markdown, no explanation outside the JSON.\n\n"
         "JSON array:"
     )
 
@@ -70,34 +87,63 @@ class ResearcherAgent:
     # ------------------------------------------------------------------ #
     #  Query expansion via LLM
     # ------------------------------------------------------------------ #
-    def generate_search_queries(self, user_input: str) -> list[str]:
+    def generate_search_queries(
+        self, user_input: str, num_queries: int
+    ) -> tuple[list[str], str]:
         """
-        Prompt the LLM to produce 3-5 refined search queries for the given
-        topic. Falls back to the original user input on any parsing error.
+        Prompt the LLM to produce *num_queries* refined search queries for
+        the given topic, together with a strategy explanation.
+
+        Returns
+        -------
+        tuple[list[str], str]
+            ``(queries, strategy)`` — the list of search strings and
+            a 1-2 sentence explanation of the chosen search angles.
+            Falls back to ``([user_input], fallback_message)`` on
+            any parsing error.
         """
-        prompt = self.QUERY_EXPANSION_PROMPT.format(user_input=user_input)
+        prompt = self.QUERY_EXPANSION_PROMPT.format(
+            user_input=user_input,
+            num_queries=num_queries,
+        )
+
+        fallback_strategy = "Fallback: using the original query directly."
 
         try:
             response = self.llm.complete(prompt)
             raw_text = str(response).strip()
 
-            # Try to extract JSON array from the response
-            queries = self._parse_json_array(raw_text)
+            # Try to extract JSON object with strategy + queries
+            parsed = self._parse_json_object(raw_text)
 
+            if parsed and isinstance(parsed, dict):
+                strategy = str(parsed.get("strategy", "")).strip()
+                queries_raw = parsed.get("queries", [])
+
+                if isinstance(queries_raw, list) and len(queries_raw) >= 1:
+                    queries = [str(q) for q in queries_raw[:num_queries]]
+                    return (queries, strategy or fallback_strategy)
+
+            # Legacy fallback: maybe the LLM returned a plain array
+            queries = self._parse_json_array(raw_text)
             if queries and isinstance(queries, list) and len(queries) >= 1:
-                # Enforce the 3-5 range
-                return [str(q) for q in queries[:5]]
+                return (
+                    [str(q) for q in queries[:num_queries]],
+                    fallback_strategy,
+                )
 
         except Exception as e:
             print(f"[ResearcherAgent] Query expansion failed: {e}")
 
         # Fallback: use the original query as-is
-        return [user_input]
+        return ([user_input], fallback_strategy)
 
     # ------------------------------------------------------------------ #
-    #  Profile-aware prompt enhancement  (NEW)
+    #  Profile-aware prompt enhancement
     # ------------------------------------------------------------------ #
-    def enhance_prompt(self, user_query: str, profile_config) -> list[str]:
+    def enhance_prompt(
+        self, user_query: str, config: dict
+    ) -> tuple[list[str], str]:
         """
         Expand a user query into refined academic search terms, respecting
         the profile's ``max_queries`` cap.
@@ -109,17 +155,22 @@ class ResearcherAgent:
         ----------
         user_query : str
             The raw topic the user typed.
-        profile_config : ResearchConfig
-            A :class:`~src.core.graph_state.ResearchConfig` instance that
-            carries the ``max_queries`` limit for the active profile.
+        config : dict
+            The profile config dict from ``get_config()``.
+            Must contain ``max_queries``.
 
         Returns
         -------
-        list[str]
-            Refined search queries (length ≤ ``profile_config.max_queries``).
+        tuple[list[str], str]
+            ``(queries, strategy)`` — refined search queries
+            (length ≤ ``config["max_queries"]``) and the agent's
+            internal strategy monologue.
         """
-        queries = self.generate_search_queries(user_query)
-        return queries[: profile_config.max_queries]
+        max_q = config["max_queries"]
+        queries, strategy = self.generate_search_queries(
+            user_query, num_queries=max_q
+        )
+        return (queries[:max_q], strategy)
 
     # ------------------------------------------------------------------ #
     #  Full research pipeline
@@ -127,9 +178,9 @@ class ResearcherAgent:
     def execute_research(
         self,
         user_input: str,
-        queries: list[str] | None = None,
-        limit_per_query: int = 5,
-        status_callback=None,
+        queries: list[str] | None,
+        limit_per_query: int,
+        status_callback: Any | None = None,
     ) -> list[dict]:
         """
         Run the full search pipeline:
@@ -193,9 +244,11 @@ class ResearcherAgent:
         self,
         papers: list[dict],
         user_query: str,
-    ) -> list[dict]:
+        config: dict,
+    ) -> tuple[list[dict], list[dict]]:
         """
-        Score and rank papers by relevance to the user's research topic.
+        Score and rank papers by relevance, then split into active vs.
+        discarded sets.
 
         Attempts an LLM-based batch evaluation first.  If that fails
         (timeout, JSON parse error, etc.), falls back to a deterministic
@@ -203,7 +256,7 @@ class ResearcherAgent:
         count.
 
         Each paper dict gets a new key ``relevance_score`` (int, 0-100).
-        The returned list is sorted **descending** by score.
+        The returned lists are sorted **descending** by score.
 
         Parameters
         ----------
@@ -211,25 +264,32 @@ class ResearcherAgent:
             Raw paper dicts from the Semantic Scholar API.
         user_query : str
             The original user topic (used for relevance comparison).
+        config : dict
+            Profile config dict (from ``get_config()``).
+            Must contain ``top_n_papers``.
 
         Returns
         -------
-        list[dict]
-            The same papers, augmented with ``relevance_score`` and sorted.
+        tuple[list[dict], list[dict]]
+            ``(active_papers, discarded_papers)`` where
+            ``active_papers`` is the top ``config["top_n_papers"]``.
         """
         if not papers:
-            return []
+            return ([], [])
 
         # Try LLM-based scoring first
         try:
             scored = self._llm_score(papers, user_query)
             if scored:
-                return scored
+                top_n = config["top_n_papers"]
+                return (scored[:top_n], scored[top_n:])
         except Exception as e:
             print(f"[ResearcherAgent] LLM scoring failed, using heuristic: {e}")
 
         # Fallback: heuristic scoring
-        return self._heuristic_score(papers, user_query)
+        scored = self._heuristic_score(papers, user_query)
+        top_n = config["top_n_papers"]
+        return (scored[:top_n], scored[top_n:])
 
     # ---- LLM-based scorer ----------------------------------------- #
 
@@ -263,14 +323,19 @@ class ResearcherAgent:
         if not scores_list or not isinstance(scores_list, list):
             return None
 
-        # Map scores back onto the original paper dicts
+        # Map scores and rationales back onto the original paper dicts
         score_map: dict[int, int] = {}
+        rationale_map: dict[int, str] = {}
         for entry in scores_list:
             if isinstance(entry, dict) and "id" in entry and "score" in entry:
                 score_map[int(entry["id"])] = int(entry["score"])
+                rationale_map[int(entry["id"])] = str(
+                    entry.get("rationale", "")
+                )
 
         for idx, p in enumerate(papers):
             p["relevance_score"] = max(0, min(100, score_map.get(idx, 50)))
+            p["score_rationale"] = rationale_map.get(idx, "")
 
         papers.sort(key=lambda x: x["relevance_score"], reverse=True)
         return papers
@@ -288,6 +353,9 @@ class ResearcherAgent:
         - Keyword overlap with query    → up to 50 pts
         - Recency (years since 2024)    → up to 25 pts
         - Citation count (log-scaled)   → up to 25 pts
+
+        Also generates a synthetic ``score_rationale`` string from
+        the component breakdown.
         """
         import math
 
@@ -314,7 +382,13 @@ class ResearcherAgent:
             cites = p.get("citationCount") or 0
             cite_score = min(25, int(math.log2(max(1, cites)) * 3))
 
-            p["relevance_score"] = kw_score + recency_score + cite_score
+            total = kw_score + recency_score + cite_score
+            p["relevance_score"] = total
+            p["score_rationale"] = (
+                f"Heuristic — Keyword overlap: {kw_score}/50, "
+                f"Recency: {recency_score}/25, "
+                f"Citations: {cite_score}/25"
+            )
 
         papers.sort(key=lambda x: x["relevance_score"], reverse=True)
         return papers
@@ -323,14 +397,18 @@ class ResearcherAgent:
     #  Helpers
     # ------------------------------------------------------------------ #
     @staticmethod
+    def _strip_markdown_fences(text: str) -> str:
+        """Remove markdown code fences (```json ... ```) from LLM output."""
+        text = re.sub(r"```(?:json)?\s*", "", text)
+        return text.strip("`").strip()
+
+    @staticmethod
     def _parse_json_array(text: str) -> list | None:
         """
         Robustly extract a JSON array from LLM output that may contain
         markdown fences or surrounding prose.
         """
-        # Strip markdown code fences if present
-        text = re.sub(r"```(?:json)?\s*", "", text)
-        text = text.strip("`").strip()
+        text = ResearcherAgent._strip_markdown_fences(text)
 
         # Try direct parse first
         try:
@@ -346,6 +424,34 @@ class ResearcherAgent:
             try:
                 parsed = json.loads(match.group())
                 if isinstance(parsed, list):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+        return None
+
+    @staticmethod
+    def _parse_json_object(text: str) -> dict | None:
+        """
+        Robustly extract a JSON object from LLM output that may contain
+        markdown fences or surrounding prose.
+        """
+        text = ResearcherAgent._strip_markdown_fences(text)
+
+        # Try direct parse first
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+        # Try to locate a JSON object substring
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if match:
+            try:
+                parsed = json.loads(match.group())
+                if isinstance(parsed, dict):
                     return parsed
             except json.JSONDecodeError:
                 pass

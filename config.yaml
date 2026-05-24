@@ -1,0 +1,33 @@
+# config.yaml
+# Single Source of Truth for SmartScholar Configuration
+
+profiles:
+  fast:
+    max_queries: 3
+    top_n_papers: 3
+    # UI backward compat keys (maps to top_n_papers conceptually)
+    results_per_query: 3
+    active_paper_count: 3
+    read_depth: abstract
+    chunk_size: 1024
+    max_loops: 1
+
+  medium:
+    max_queries: 5
+    top_n_papers: 5
+    # UI backward compat keys (maps to top_n_papers conceptually)
+    results_per_query: 5
+    active_paper_count: 5
+    read_depth: hybrid
+    chunk_size: 512
+    max_loops: 2
+
+  pro:
+    max_queries: 10
+    top_n_papers: 10
+    # UI backward compat keys (maps to top_n_papers conceptually)
+    results_per_query: 10
+    active_paper_count: 10
+    read_depth: full_pdf
+    chunk_size: 256
+    max_loops: 3
