@@ -35,6 +35,7 @@ from src.core.orchestrator import (
     stream_enhance_flow,
     stream_search_flow,
     stream_analysis_flow,
+    stream_synthesis_flow
 )
 
 # ------------------------------------------------------------------ #
@@ -518,14 +519,26 @@ elif st.session_state.workflow_step == "paper_review":
             # Wait, the stream_analysis_flow only runs analyst. We should run
             # the full remaining pipeline, but the user said "Replace analyst direct call with stream_analysis_flow loop".
             # Wait, to stream the remaining flow, I should create a status container and stream it.
-            
-            with st.status("🧠 Agent Pipeline (Analysis & Synthesis)…", expanded=True) as status:
+
+            with st.status("🧠 Agent Pipeline (Analyse & Synthese)…", expanded=True) as status:
+
+                # Teil 1: Der Analyse-Graph läuft (Analyst & Critic)
+                st.write("**Phase 1: Analysiere ausgewählte Paper...**")
                 for event in stream_analysis_flow(gs):
                     if isinstance(event, str):
                         st.write(event)
                     elif isinstance(event, dict):
-                        gs = event
-                status.update(label="Analysis & Synthesis Complete", state="complete")
+                        gs = event  # State aktualisieren
+
+                # Teil 2: DEIN NEUER Synthesizer-Graph läuft
+                st.write("**Phase 2: Schreibe Literature Review...**")
+                for event in stream_synthesis_flow(gs):
+                    if isinstance(event, str):
+                        st.write(event)
+                    elif isinstance(event, dict):
+                        gs = event  # State final aktualisieren (inkl. final_review)
+
+                status.update(label="Analyse & Synthese abgeschlossen!", state="complete")
 
             st.session_state.graph_state = gs
             st.session_state.workflow_step = "done"
