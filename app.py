@@ -294,8 +294,7 @@ cfg = get_config(st.session_state.config_profile)
 st.sidebar.markdown(
     f"<div class='profile-chip'>"
     f"Queries: {cfg['max_queries']} &nbsp;·&nbsp; "
-    f"Results/query: {cfg['results_per_query']} &nbsp;·&nbsp; "
-    f"Active papers: {cfg['active_paper_count']}</div>",
+    f"Top papers: {cfg['top_n_papers']}</div>",
     unsafe_allow_html=True,
 )
 
