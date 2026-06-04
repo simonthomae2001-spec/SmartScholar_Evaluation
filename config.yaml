@@ -11,6 +11,7 @@ profiles:
     read_depth: abstract
     chunk_size: 1024
     max_loops: 1
+    critic_pass_threshold: 50
 
   medium:
     max_queries: 5
@@ -21,6 +22,7 @@ profiles:
     read_depth: hybrid
     chunk_size: 512
     max_loops: 2
+    critic_pass_threshold: 60
 
   pro:
     max_queries: 10
@@ -31,3 +33,4 @@ profiles:
     read_depth: full_pdf
     chunk_size: 256
     max_loops: 3
+    critic_pass_threshold: 70
