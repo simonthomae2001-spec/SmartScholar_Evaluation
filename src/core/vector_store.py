@@ -17,6 +17,10 @@ Key contract (decided with the team):
 Chunking is config-driven (SSOT): ``chunk_size`` comes from the active
 profile and is measured in TOKENS (SentenceSplitter's unit), matching the
 architecture doc (fast 1024 / medium 512 / pro 256).
+
+Lifecycle (decision 0.C): the collection is reset per research run via
+``reset_collection()`` so ChromaDB contains exactly the papers of the
+current run — retrievals can't return hits from a previous topic.
 """
 
 import os
@@ -42,18 +46,11 @@ class VectorEngine:
         # Ensure the data directory exists.
         os.makedirs("./data", exist_ok=True)
 
-        # ChromaDB client persisted under ./data/chroma_db
+        # ChromaDB client persisted under ./data/chroma_db (created once).
         self.db = chromadb.PersistentClient(path="./data/chroma_db")
         self.collection_name = collection_name
-        self.chroma_collection = self.db.get_or_create_collection(collection_name)
 
-        # LlamaIndex vector store on top of the Chroma collection.
-        self.vector_store = ChromaVectorStore(chroma_collection=self.chroma_collection)
-        self.storage_context = StorageContext.from_defaults(
-            vector_store=self.vector_store
-        )
-
-        # LLM + embedding model from the project factory.
+        # LLM + embedding model from the project factory (created once).
         self.llm = ModelFactory.get_model()
         self.embed_model = ModelFactory.get_embedding_model()
 
@@ -61,13 +58,50 @@ class VectorEngine:
         Settings.llm = self.llm
         Settings.embed_model = self.embed_model
 
-        # A single index bound to the vector store. We insert nodes into it
-        # per paper (insert_nodes does NOT re-chunk — it stores our nodes and
-        # IDs verbatim, which is exactly what we need).
+        # Bind the collection -> vector store -> index chain.
+        self._build_index()
+
+    # ------------------------------------------------------------------ #
+    #  Index lifecycle
+    # ------------------------------------------------------------------ #
+    def _build_index(self) -> None:
+        """
+        (Re)bind the Chroma collection -> vector store -> index chain.
+
+        Shared by ``__init__`` and ``reset_collection`` so the whole chain is
+        always rebuilt consistently. After a ``delete_collection`` the old
+        ``chroma_collection`` / ``vector_store`` / ``_index`` references are
+        stale and MUST be rebuilt — that's exactly what this method does.
+        """
+        self.chroma_collection = self.db.get_or_create_collection(
+            self.collection_name
+        )
+        self.vector_store = ChromaVectorStore(
+            chroma_collection=self.chroma_collection
+        )
+        self.storage_context = StorageContext.from_defaults(
+            vector_store=self.vector_store
+        )
+        # insert_nodes does NOT re-chunk — it stores our nodes and IDs verbatim.
         self._index = VectorStoreIndex.from_vector_store(
             vector_store=self.vector_store,
             embed_model=self.embed_model,
         )
+
+    def reset_collection(self) -> None:
+        """
+        Drop all chunks from previous runs and start with a fresh collection.
+
+        The Ingestor calls this at the START of a run (before indexing the
+        first paper), guaranteeing ChromaDB holds exactly the finalised papers
+        of the current research run.
+        """
+        try:
+            self.db.delete_collection(self.collection_name)
+        except Exception:
+            # Collection didn't exist yet → nothing to delete.
+            pass
+        self._build_index()
 
     # ------------------------------------------------------------------ #
     #  Core ingestion entry point
