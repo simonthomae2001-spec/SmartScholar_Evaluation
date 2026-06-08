@@ -43,7 +43,6 @@ from src.agents.analyst_agent import AnalystAgent
 from src.agents.critic_agent import CriticAgent
 from src.agents.synthesizer_agent import SynthesizerAgent
 
-
 # ------------------------------------------------------------------ #
 #  Shared agent singletons (created once, reused across invocations)
 # ------------------------------------------------------------------ #
@@ -129,7 +128,7 @@ def gatekeeper_node(state: GraphState, config: RunnableConfig) -> dict:
     _ui_log(config, "⚙️ [System] Starting Gatekeeper Agent...")
 
     if state.get("gatekeeper_confirmed", False) and state.get(
-        "gatekeeper_override_allowed", False
+            "gatekeeper_override_allowed", False
     ):
         reason = "Durch Benutzerbestätigung akzeptiert."
         _ui_log(config, f"✅ [Gatekeeper] Query accepted: {reason}")
@@ -207,7 +206,7 @@ def researcher_enhance_node(state: GraphState, config: RunnableConfig) -> dict:
         user_query=state["user_query"],
         config=cfg,
     )
-    
+
     if strategy:
         _ui_log(config, f"🧠 [Researcher] Strategy: {strategy}")
     _ui_log(config, f"✅ [System] Generated {len(queries)} search queries.")
@@ -240,7 +239,7 @@ def researcher_search_node(state: GraphState, config: RunnableConfig) -> dict:
     # 2. Score, rank, and split
     _ui_log(config, f"🏆 [System] Scoring & ranking {len(papers)} retrieved papers...")
     active, discarded = agent.evaluate_papers(papers, state["user_query"], cfg)
-    
+
     _ui_log(config, f"✅ [System] Retained {len(active)} active papers ({len(discarded)} in reserve pool).")
 
     return {
@@ -258,9 +257,13 @@ def ingestor_node(state: GraphState, config: RunnableConfig) -> dict:
     agent = _get_ingestor()
     cfg = _resolve_config(state)
 
+    # Bridge the agent's progress messages to the Streamlit UI queue, so the
+    # UI doesn't freeze during (potentially slow) ingestion.
+    def _agent_cb(msg: str):
+        _ui_log(config, msg)
+
     papers = state.get("active_papers", [])
-    _ui_log(config, f"📚 [Ingestor] Ingesting {len(papers)} papers...")
-    ingested = agent.ingest_knowledge(papers, cfg)
+    ingested = agent.ingest_knowledge(papers, cfg, status_callback=_agent_cb)
     _ui_log(config, "✅ [System] Ingestion complete.")
 
     return {"active_papers": ingested}
@@ -417,12 +420,17 @@ def build_search_graph():
 
 def build_analysis_graph():
     """
-    Construct a **partial** graph used by the Streamlit UI to run the
-    analyst loop after the user has confirmed the papers.
+    Construct a **partial** graph used by the Streamlit UI after the user has
+    finalised the papers: first ingest the selected papers into ChromaDB,
+    then run the analyst.
+
+    Topology: START → ingestor_node → analyst_node → END
     """
     graph = StateGraph(GraphState)
+    graph.add_node("ingestor_node", ingestor_node)
     graph.add_node("analyst_node", analyst_node)
-    graph.add_edge(START, "analyst_node")
+    graph.add_edge(START, "ingestor_node")
+    graph.add_edge("ingestor_node", "analyst_node")
     graph.add_edge("analyst_node", END)
     return graph.compile()
 

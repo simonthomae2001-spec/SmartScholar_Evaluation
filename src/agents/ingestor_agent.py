@@ -4,18 +4,29 @@ ingestor_agent.py — Knowledge ingestion.
 The Ingestor is the "librarian": for each finalised paper it ingests text
 into ChromaDB at the profile's read_depth, and attaches a LEAN reference
 (chunk_ids + ingestion_status + ingested_depth) to the paper dict. Large
-content (chunks + embeddings) lives ONLY in ChromaDB, never in the graph
-state.
+content lives ONLY in ChromaDB, never in the graph state.
 
-Phase 1 status: read_depth == "abstract" (FAST) is fully implemented.
-hybrid / full_pdf fall back to abstract until the PDF logic is added in
-Phase 3/4 (the pdf_tool already exists and is tested separately).
+Implemented depths:
+- "abstract" (FAST)   — index the abstract only.
+- "hybrid"   (MEDIUM) — try the open-access PDF; index abstract + PDF body
+                        together (coarse, no page metadata). Silent per-paper
+                        fallback to abstract-only if no usable PDF.
+- "full_pdf" (PRO)    — Phase 4. Until then routed through the hybrid path
+                        (uses the pro chunk_size, but no page metadata /
+                        cleanup yet).
+
+Status vocabulary (decision F — feeds observability + Termin-5 metrics):
+- "success_pdf"        : a PDF was downloaded, parsed, and indexed.
+- "success_abstract"   : the abstract was indexed as the chosen depth (FAST).
+- "fallback_abstract"  : no usable PDF, silently fell back to the abstract.
+- "no_content"         : neither PDF nor abstract usable.
 """
 from __future__ import annotations
 
 from typing import Callable
 
 from src.core.vector_store import VectorEngine
+from src.tools.pdf_tool import fetch_pdf_text
 
 
 class IngestorAgent:
@@ -29,30 +40,16 @@ class IngestorAgent:
     #  Entry point (called by the orchestrator's ingestor_node)
     # ------------------------------------------------------------------ #
     def ingest_knowledge(
-        self,
-        papers: list[dict],
-        config: dict,
-        status_callback: Callable[[str], None] | None = None,
+            self,
+            papers: list[dict],
+            config: dict,
+            status_callback: Callable[[str], None] | None = None,
     ) -> list[dict]:
         """
         Ingest all papers into a fresh ChromaDB collection.
 
-        Parameters
-        ----------
-        papers : list[dict]
-            The finalised active_papers (from the paper-review step).
-        config : dict
-            Profile config; must contain ``read_depth`` and ``chunk_size``.
-        status_callback : callable | None
-            Optional progress sink (wired to ``_ui_log`` by the orchestrator)
-            so the Streamlit UI doesn't freeze during long ingestion.
-
-        Returns
-        -------
-        list[dict]
-            The same papers, each augmented with ``citation_id``,
-            ``chunk_ids``, ``ingestion_status``, and ``ingested_depth``.
-            Large content lives only in ChromaDB.
+        Returns the same papers, each augmented with ``citation_id``,
+        ``chunk_ids``, ``ingestion_status``, and ``ingested_depth``.
         """
         read_depth = config["read_depth"]
         chunk_size = config["chunk_size"]
@@ -66,8 +63,8 @@ class IngestorAgent:
         self.vector_engine.reset_collection()
 
         for idx, paper in enumerate(papers, start=1):
-            # Guarantee a citation_id — it's the chunk-id prefix AND the
-            # backward reference the Critic relies on.
+            # Guarantee a citation_id — the chunk-id prefix AND the backward
+            # reference the Critic relies on.
             citation_id = paper.get("citation_id") or f"[{idx}]"
             paper["citation_id"] = citation_id
 
@@ -75,60 +72,125 @@ class IngestorAgent:
             _log(f"📄 [Ingestor] Ingesting {citation_id} — {title[:60]}…")
 
             if read_depth == "abstract":
-                chunk_ids, status = self._ingest_abstract(
-                    paper, citation_id, chunk_size
+                chunk_ids, status, depth = self._ingest_abstract(
+                    paper, citation_id, chunk_size, intended=True
                 )
-                depth_done = "abstract"
+            elif read_depth == "hybrid":
+                chunk_ids, status, depth = self._ingest_hybrid(
+                    paper, citation_id, chunk_size, _log
+                )
+            elif read_depth == "full_pdf":
+                # Phase 4 (PRO): page metadata + cleanup. Until then, use the
+                # hybrid path with the pro chunk_size.
+                chunk_ids, status, depth = self._ingest_hybrid(
+                    paper, citation_id, chunk_size, _log
+                )
             else:
-                # hybrid / full_pdf: PDF logic arrives in Phase 3/4.
-                # Until then, fall back to abstract so the pipeline runs.
-                chunk_ids, status = self._ingest_abstract(
-                    paper, citation_id, chunk_size
+                # Unknown depth → safe default: abstract.
+                chunk_ids, status, depth = self._ingest_abstract(
+                    paper, citation_id, chunk_size, intended=True
                 )
-                depth_done = "abstract"
 
             # Attach the lean reference — NOT the text itself.
             paper["chunk_ids"] = chunk_ids
             paper["ingestion_status"] = status
-            paper["ingested_depth"] = depth_done
+            paper["ingested_depth"] = depth
 
             _log(
                 f"   ↳ {citation_id}: {status} "
-                f"({len(chunk_ids)} chunks, depth={depth_done})"
+                f"({len(chunk_ids)} chunks, depth={depth})"
             )
 
         _log(f"✅ [Ingestor] Done — {len(papers)} papers ingested.")
         return papers
 
     # ------------------------------------------------------------------ #
-    #  Depth: abstract-only (FAST, and current fallback for all profiles)
+    #  Depth: abstract-only (FAST + the silent fallback for MEDIUM/PRO)
     # ------------------------------------------------------------------ #
     def _ingest_abstract(
-        self, paper: dict, citation_id: str, chunk_size: int
-    ) -> tuple[list[str], str]:
+            self,
+            paper: dict,
+            citation_id: str,
+            chunk_size: int,
+            intended: bool,
+    ) -> tuple[list[str], str, str]:
         """
         Index just the abstract.
 
-        Returns
-        -------
-        tuple[list[str], str]
-            ``(chunk_ids, ingestion_status)``. Status is ``"success"`` when
-            chunks were written, or ``"no_content"`` when the paper has no
-            usable abstract (a graceful, non-crashing edge case).
+        ``intended`` distinguishes the two reasons we end up here:
+        - True  → abstract is the chosen depth (FAST)        → "success_abstract"
+        - False → PDF was unavailable, this is the fallback  → "fallback_abstract"
+
+        Returns ``(chunk_ids, ingestion_status, depth)``.
         """
         abstract = (paper.get("abstract") or "").strip()
         if not abstract:
-            return ([], "no_content")
+            return ([], "no_content", "abstract")
 
-        metadata = {
-            "title": str(paper.get("title") or "Untitled"),
-            "year": str(paper.get("year") or "n.d."),
-        }
         chunk_ids = self.vector_engine.index_paper(
             text=abstract,
             citation_id=citation_id,
             chunk_size=chunk_size,
-            metadata=metadata,
+            metadata=self._meta(paper),
         )
-        status = "success" if chunk_ids else "no_content"
-        return (chunk_ids, status)
+        if not chunk_ids:
+            return ([], "no_content", "abstract")
+
+        status = "success_abstract" if intended else "fallback_abstract"
+        return (chunk_ids, status, "abstract")
+
+    # ------------------------------------------------------------------ #
+    #  Depth: hybrid (MEDIUM) — abstract + PDF body, coarse, with fallback
+    # ------------------------------------------------------------------ #
+    def _ingest_hybrid(
+            self,
+            paper: dict,
+            citation_id: str,
+            chunk_size: int,
+            log: Callable[[str], None],
+    ) -> tuple[list[str], str, str]:
+        """
+        Try the open-access PDF. On success, index abstract + PDF body text
+        together (coarse, no page metadata). On any failure (no link,
+        paywall, parse error), silently fall back to abstract-only.
+
+        Returns ``(chunk_ids, ingestion_status, depth)``.
+        """
+        url = paper.get("openAccessPdf")
+        paper_id = paper.get("paperId") or citation_id
+
+        if url:
+            log(f"   ⬇️ [{citation_id}] Downloading & parsing PDF…")
+
+        pdf_result = fetch_pdf_text(url, paper_id)
+
+        if pdf_result.has_content:
+            abstract = (paper.get("abstract") or "").strip()
+            pdf_text = pdf_result.full_text()
+            # "hybrid": the reliable abstract + the full PDF body.
+            combined = f"{abstract}\n\n{pdf_text}" if abstract else pdf_text
+
+            chunk_ids = self.vector_engine.index_paper(
+                text=combined,
+                citation_id=citation_id,
+                chunk_size=chunk_size,
+                metadata=self._meta(paper),
+            )
+            if chunk_ids:
+                return (chunk_ids, "success_pdf", "hybrid")
+
+        # Silent per-paper fallback to abstract-only.
+        return self._ingest_abstract(
+            paper, citation_id, chunk_size, intended=False
+        )
+
+    # ------------------------------------------------------------------ #
+    #  Helpers
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _meta(paper: dict) -> dict:
+        """Flat metadata for ChromaDB (simple types only)."""
+        return {
+            "title": str(paper.get("title") or "Untitled"),
+            "year": str(paper.get("year") or "n.d."),
+        }
