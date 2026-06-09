@@ -1,0 +1,14 @@
+# Virtual environment
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+
+# Environment / local files
+.env
+.DS_Store
+
+# PyCharm / IntelliJ
+.idea/
+*.iml
