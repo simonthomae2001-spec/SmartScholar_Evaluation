@@ -2,25 +2,23 @@
 vector_store.py — ChromaDB + LlamaIndex vector engine for SmartScholar.
 
 The VectorEngine is the "shelf": it owns chunking, embedding, and storage.
-The IngestorAgent (the "librarian") calls ``index_paper`` per paper and gets
-back the list of ``chunk_ids`` it then attaches to the paper dict in
-``active_papers``.
+The IngestorAgent (the "librarian") calls index_paper / index_paper_by_pages
+per paper and gets back the list of ``chunk_ids`` it then attaches to the
+paper dict in ``active_papers``.
 
 Key contract (decided with the team):
 - Large content (chunks + embeddings) lives ONLY in ChromaDB.
-- ``active_papers`` stays lean — it only carries chunk_ids (a foreign-key
-  reference into the DB) plus an ingestion_status.
+- ``active_papers`` stays lean — chunk_ids + ingestion_status only.
 - Chunk IDs are predictable: f"{citation_id}_chunk_{i}" (e.g. "[1]_chunk_0").
-- Every chunk carries ``citation_id`` in its metadata — the backward
-  reference the Critic uses to trace a retrieved chunk back to its paper.
+- Every chunk carries ``citation_id`` in its metadata (backward reference).
+  PRO chunks additionally carry ``page_number`` (fine-grained reference for
+  the Critic: "claim from [3], page 7").
 
-Chunking is config-driven (SSOT): ``chunk_size`` comes from the active
-profile and is measured in TOKENS (SentenceSplitter's unit), matching the
-architecture doc (fast 1024 / medium 512 / pro 256).
+Chunking is config-driven (SSOT): ``chunk_size`` (TOKENS) comes from the
+active profile (fast 1024 / medium 512 / pro 256).
 
-Lifecycle (decision 0.C): the collection is reset per research run via
-``reset_collection()`` so ChromaDB contains exactly the papers of the
-current run — retrievals can't return hits from a previous topic.
+Lifecycle (0.C): the collection is reset per research run via
+``reset_collection()``.
 """
 
 import os
@@ -43,36 +41,23 @@ class VectorEngine:
     """Owns chunking, embedding, and ChromaDB storage for one research run."""
 
     def __init__(self, collection_name: str = "scholar_papers"):
-        # Ensure the data directory exists.
         os.makedirs("./data", exist_ok=True)
 
-        # ChromaDB client persisted under ./data/chroma_db (created once).
         self.db = chromadb.PersistentClient(path="./data/chroma_db")
         self.collection_name = collection_name
 
-        # LLM + embedding model from the project factory (created once).
         self.llm = ModelFactory.get_model()
         self.embed_model = ModelFactory.get_embedding_model()
-
-        # Global settings prevent LlamaIndex from falling back to OpenAI.
         Settings.llm = self.llm
         Settings.embed_model = self.embed_model
 
-        # Bind the collection -> vector store -> index chain.
         self._build_index()
 
     # ------------------------------------------------------------------ #
     #  Index lifecycle
     # ------------------------------------------------------------------ #
     def _build_index(self) -> None:
-        """
-        (Re)bind the Chroma collection -> vector store -> index chain.
-
-        Shared by ``__init__`` and ``reset_collection`` so the whole chain is
-        always rebuilt consistently. After a ``delete_collection`` the old
-        ``chroma_collection`` / ``vector_store`` / ``_index`` references are
-        stale and MUST be rebuilt — that's exactly what this method does.
-        """
+        """(Re)bind the Chroma collection -> vector store -> index chain."""
         self.chroma_collection = self.db.get_or_create_collection(
             self.collection_name
         )
@@ -82,29 +67,28 @@ class VectorEngine:
         self.storage_context = StorageContext.from_defaults(
             vector_store=self.vector_store
         )
-        # insert_nodes does NOT re-chunk — it stores our nodes and IDs verbatim.
         self._index = VectorStoreIndex.from_vector_store(
             vector_store=self.vector_store,
             embed_model=self.embed_model,
         )
 
     def reset_collection(self) -> None:
-        """
-        Drop all chunks from previous runs and start with a fresh collection.
-
-        The Ingestor calls this at the START of a run (before indexing the
-        first paper), guaranteeing ChromaDB holds exactly the finalised papers
-        of the current research run.
-        """
+        """Drop all chunks from previous runs and start with a fresh collection."""
         try:
             self.db.delete_collection(self.collection_name)
         except Exception:
-            # Collection didn't exist yet → nothing to delete.
-            pass
+            pass  # Collection didn't exist yet → nothing to delete.
         self._build_index()
 
     # ------------------------------------------------------------------ #
-    #  Core ingestion entry point
+    #  Internal: build a SentenceSplitter for a given chunk_size
+    # ------------------------------------------------------------------ #
+    def _make_splitter(self, chunk_size: int) -> SentenceSplitter:
+        overlap = max(1, int(chunk_size * _CHUNK_OVERLAP_RATIO))
+        return SentenceSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
+
+    # ------------------------------------------------------------------ #
+    #  Ingestion: single text blob (FAST abstract, MEDIUM hybrid)
     # ------------------------------------------------------------------ #
     def index_paper(
         self,
@@ -114,46 +98,18 @@ class VectorEngine:
         metadata: dict | None = None,
     ) -> list[str]:
         """
-        Chunk ``text`` and store the chunks in ChromaDB.
+        Chunk a single text blob and store the chunks in ChromaDB.
 
-        Steps
-        -----
-        1. Split ``text`` into token-sized chunks with a SentenceSplitter
-           (so words/sentences aren't cut mid-way), using the profile's
-           ``chunk_size`` and a 15 % overlap.
-        2. Build a ``TextNode`` per chunk with a predictable id
-           ``f"{citation_id}_chunk_{i}"`` and metadata that ALWAYS contains
-           ``citation_id`` (the backward reference for the Critic).
-        3. Embed + store the nodes via ``insert_nodes`` (no re-chunking).
-
-        Parameters
-        ----------
-        text : str
-            The text to ingest (an abstract, selected sections, or full PDF
-            text — the Ingestor decides which, per profile).
-        citation_id : str
-            The paper's citation id, e.g. "[1]". Used as the id prefix and
-            stored in every chunk's metadata.
-        chunk_size : int
-            Tokens per chunk, from ``config["chunk_size"]``.
-        metadata : dict | None
-            Extra flat metadata (title, year, page, ...). Values must be
-            simple types (str/int/float) — ChromaDB rejects lists/dicts.
-
-        Returns
-        -------
-        list[str]
-            The chunk_ids that were created and stored, in order. Empty list
-            if ``text`` is empty.
+        Every chunk gets a predictable id ``f"{citation_id}_chunk_{i}"`` and
+        metadata that ALWAYS contains ``citation_id``. Returns the chunk_ids
+        (empty list if ``text`` is empty).
         """
         if not text or not text.strip():
             return []
 
-        overlap = max(1, int(chunk_size * _CHUNK_OVERLAP_RATIO))
-        splitter = SentenceSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
+        splitter = self._make_splitter(chunk_size)
         chunks = splitter.split_text(text)
 
-        # citation_id is the backward reference (DB hit -> which paper).
         base_meta = dict(metadata or {})
         base_meta["citation_id"] = citation_id
 
@@ -165,6 +121,53 @@ class VectorEngine:
                 TextNode(text=chunk, id_=chunk_id, metadata=dict(base_meta))
             )
             chunk_ids.append(chunk_id)
+
+        if nodes:
+            self._index.insert_nodes(nodes)
+
+        return chunk_ids
+
+    # ------------------------------------------------------------------ #
+    #  Ingestion: page-aware (PRO full_pdf)
+    # ------------------------------------------------------------------ #
+    def index_paper_by_pages(
+        self,
+        pages: list[tuple[int, str]],
+        citation_id: str,
+        chunk_size: int,
+        metadata: dict | None = None,
+    ) -> list[str]:
+        """
+        Chunk each page separately so every chunk carries its 1-based
+        ``page_number`` in metadata — the fine-grained backward reference the
+        Critic uses ("claim from [3], page 7").
+
+        Chunk IDs stay globally unique across the whole paper:
+        ``f"{citation_id}_chunk_{i}"`` with ``i`` running over ALL chunks of
+        all pages (not resetting per page). Returns the chunk_ids.
+        """
+        if not pages:
+            return []
+
+        splitter = self._make_splitter(chunk_size)
+
+        base_meta = dict(metadata or {})
+        base_meta["citation_id"] = citation_id
+
+        nodes: list[TextNode] = []
+        chunk_ids: list[str] = []
+        global_i = 0
+        for page_number, page_text in pages:
+            page_text = (page_text or "").strip()
+            if not page_text:
+                continue
+            for chunk in splitter.split_text(page_text):
+                chunk_id = f"{citation_id}_chunk_{global_i}"
+                meta = dict(base_meta)
+                meta["page_number"] = int(page_number)  # fine-grained ref
+                nodes.append(TextNode(text=chunk, id_=chunk_id, metadata=meta))
+                chunk_ids.append(chunk_id)
+                global_i += 1
 
         if nodes:
             self._index.insert_nodes(nodes)

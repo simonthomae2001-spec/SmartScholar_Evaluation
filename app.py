@@ -136,7 +136,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-
 # ------------------------------------------------------------------ #
 #  Session-state initialisation
 # ------------------------------------------------------------------ #
@@ -144,11 +143,11 @@ _DEFAULTS = {
     "workflow_step": "idle",
     "current_query": None,
     "config_profile": "medium",
-    "graph_state": None,          # dict — mirrors GraphState
+    "graph_state": None,  # dict — mirrors GraphState
     "search_queries_edit": None,  # list — mutable copy for the review UI
     "trace_steps": [],
-    "query_gen": 0,               # bumped on every Regenerate to force fresh widget keys
-    "gatekeeper_error": None,     # str — last rejection reason shown on idle
+    "query_gen": 0,  # bumped on every Regenerate to force fresh widget keys
+    "gatekeeper_error": None,  # str — last rejection reason shown on idle
     "gatekeeper_pending_query": None,
     "gatekeeper_confirmed": False,
     "gatekeeper_override_allowed": False,
@@ -305,7 +304,6 @@ if st.session_state.workflow_step != "idle":
         _reset_workflow()
         st.rerun()
 
-
 # ------------------------------------------------------------------ #
 #  Header
 # ------------------------------------------------------------------ #
@@ -323,6 +321,7 @@ _STEP_LABELS = {
     "query_review": "Review Queries",
     "searching": "Searching papers…",
     "paper_review": "Review Papers",
+    "ingesting": "Analysing papers…",
     "done": "Research Finalised ✓",
 }
 current_label = _STEP_LABELS.get(st.session_state.workflow_step, "")
@@ -332,7 +331,6 @@ if st.session_state.workflow_step != "idle":
         f'<span class="current-step">{current_label}</span></div>',
         unsafe_allow_html=True,
     )
-
 
 # ================================================================== #
 #  STEP 0 — Idle: accept user input
@@ -350,8 +348,8 @@ if st.session_state.workflow_step == "idle":
     query = st.chat_input("What would you like to research today?")
     if query:
         if (
-            st.session_state.gatekeeper_pending_query
-            and _is_gatekeeper_confirmation(query)
+                st.session_state.gatekeeper_pending_query
+                and _is_gatekeeper_confirmation(query)
         ):
             _confirm_pending_gatekeeper_query()
             st.rerun()
@@ -380,9 +378,11 @@ elif st.session_state.workflow_step == "enhancing":
         trace = []
         result: GraphState = {}
 
+
         def _log(msg):
             st.write(msg)
             trace.append(msg)
+
 
         if st.session_state.query_gen == 0:
             initial_state: GraphState = {
@@ -454,12 +454,14 @@ elif st.session_state.workflow_step == "query_review":
     )
 
     # Filter out any query that exactly matches the foundational query to avoid redundancy
-    queries = [q for q in st.session_state.search_queries_edit if q.strip().lower() != st.session_state.current_query.strip().lower()]
+    queries = [q for q in st.session_state.search_queries_edit if
+               q.strip().lower() != st.session_state.current_query.strip().lower()]
     updated_queries: list[str] = []
     enabled_flags: list[bool] = []
 
     if not queries:
-        st.info("No additional enhanced queries were generated. The search will proceed with only your foundational query.")
+        st.info(
+            "No additional enhanced queries were generated. The search will proceed with only your foundational query.")
     else:
         for i, q in enumerate(queries):
             col_check, col_input = st.columns([0.08, 0.92])
@@ -513,9 +515,11 @@ elif st.session_state.workflow_step == "searching":
     with st.status("🔍 Searching Semantic Scholar & scoring papers…", expanded=True) as status:
         trace = []
 
+
         def _log_s(msg):
             st.write(msg)
             trace.append(msg)
+
 
         gs = st.session_state.graph_state
 
@@ -575,12 +579,13 @@ elif st.session_state.workflow_step == "paper_review":
                 f"**Authors:** {', '.join(authors[:5])}"
                 f"{'…' if len(authors) > 5 else ''}"
             )
-            st.markdown(f"**Citations:** {cites} &nbsp;·&nbsp; **Year:** {year} &nbsp;·&nbsp; {badge}", unsafe_allow_html=True)
-            
+            st.markdown(f"**Citations:** {cites} &nbsp;·&nbsp; **Year:** {year} &nbsp;·&nbsp; {badge}",
+                        unsafe_allow_html=True)
+
             rationale = paper.get("score_rationale", "")
             if rationale:
                 st.markdown(f"🧠 **Agent Rationale:** {rationale}")
-                
+
             if url:
                 st.markdown(f"[🔗 View on Semantic Scholar]({url})")
             st.markdown("---")
@@ -601,10 +606,10 @@ elif st.session_state.workflow_step == "paper_review":
     with col_add:
         add_disabled = len(discarded) == 0
         if st.button(
-            "➕ Add Alternative Paper",
-            use_container_width=True,
-            disabled=add_disabled,
-            help="Pull the next-highest-scored paper from the reserve pool",
+                "➕ Add Alternative Paper",
+                use_container_width=True,
+                disabled=add_disabled,
+                help="Pull the next-highest-scored paper from the reserve pool",
         ):
             if discarded:
                 promoted = discarded.pop(0)
@@ -616,9 +621,9 @@ elif st.session_state.workflow_step == "paper_review":
 
     with col_fin:
         if st.button(
-            "🚀 Finalize Research",
-            type="primary",
-            use_container_width=True,
+                "🚀 Finalize Research",
+                type="primary",
+                use_container_width=True,
         ):
             # Remove unchecked papers
             final_active = []
@@ -635,29 +640,57 @@ elif st.session_state.workflow_step == "paper_review":
 
             gs["active_papers"] = final_active
             gs["discarded_papers"] = newly_discarded
-
-            # Run the remaining flow (analyst -> critic -> synthesizer)
-            # The remaining nodes will be triggered via stream_analysis_flow
-            # Wait, the stream_analysis_flow only runs analyst. We should run
-            # the full remaining pipeline, but the user said "Replace analyst direct call with stream_analysis_flow loop".
-            # Wait, to stream the remaining flow, I should create a status container and stream it.
-            
-            with st.status("🧠 Agent Pipeline (Analysis & Synthesis)…", expanded=True) as status:
-                for event in stream_analysis_flow(gs):
-                    if isinstance(event, str):
-                        st.write(event)
-                    elif isinstance(event, dict):
-                        gs = event
-                status.update(label="Analysis & Synthesis Complete", state="complete")
-
             st.session_state.graph_state = gs
-            st.session_state.workflow_step = "done"
+
+            # Hand off to a dedicated 'ingesting' step. This makes the page
+            # re-render from the top and run the pipeline in the main trace
+            # container, consistent with the other agents.
+            st.session_state.workflow_step = "ingesting"
             st.rerun()
 
     # Show reserve pool size
     if discarded:
         st.caption(f"📦 Reserve pool: {len(discarded)} papers available")
 
+# ================================================================== #
+#  STEP 4.5 — Ingesting: ingest papers + run analyst pipeline
+# ================================================================== #
+elif st.session_state.workflow_step == "ingesting":
+    _rerun_if_gatekeeper_rejected()
+
+    with st.chat_message("user"):
+        st.write(st.session_state.current_query)
+
+    with st.status(
+            "🧠 Agent Pipeline (Ingestion & Analysis)…", expanded=True
+    ) as status:
+        trace = []
+
+
+        def _log_i(msg):
+            st.write(msg)
+            trace.append(msg)
+
+
+        gs = st.session_state.graph_state
+
+        for event in stream_analysis_flow(gs):
+            if isinstance(event, str):
+                _log_i(event)
+            elif isinstance(event, dict):
+                gs = event
+
+        st.session_state.graph_state = gs
+        st.session_state.trace_steps = trace
+
+        status.update(
+            label="Ingestion & Analysis Complete",
+            state="complete",
+            expanded=False,
+        )
+
+    st.session_state.workflow_step = "done"
+    st.rerun()
 
 # ================================================================== #
 #  STEP 5 — Done: show final selection with citation IDs
@@ -697,11 +730,11 @@ elif st.session_state.workflow_step == "done":
                 f"{'…' if len(authors) > 5 else ''}"
             )
             st.markdown(f"**Citations:** {cites} &nbsp;·&nbsp; {badge}", unsafe_allow_html=True)
-            
+
             rationale = paper.get("score_rationale", "")
             if rationale:
                 st.markdown(f"🧠 **Agent Rationale:** {rationale}")
-                
+
             if url:
                 st.markdown(f"[🔗 View on Semantic Scholar]({url})")
             st.markdown("---")

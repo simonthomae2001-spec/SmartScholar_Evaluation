@@ -80,9 +80,7 @@ class IngestorAgent:
                     paper, citation_id, chunk_size, _log
                 )
             elif read_depth == "full_pdf":
-                # Phase 4 (PRO): page metadata + cleanup. Until then, use the
-                # hybrid path with the pro chunk_size.
-                chunk_ids, status, depth = self._ingest_hybrid(
+                chunk_ids, status, depth = self._ingest_full_pdf(
                     paper, citation_id, chunk_size, _log
                 )
             else:
@@ -160,7 +158,7 @@ class IngestorAgent:
         paper_id = paper.get("paperId") or citation_id
 
         if url:
-            log(f"   ⬇️ [{citation_id}] Downloading & parsing PDF…")
+            log(f"   ⬇️ {citation_id} Downloading & parsing PDF…")
 
         pdf_result = fetch_pdf_text(url, paper_id)
 
@@ -178,6 +176,46 @@ class IngestorAgent:
             )
             if chunk_ids:
                 return (chunk_ids, "success_pdf", "hybrid")
+
+        # Silent per-paper fallback to abstract-only.
+        return self._ingest_abstract(
+            paper, citation_id, chunk_size, intended=False
+        )
+
+    # ------------------------------------------------------------------ #
+    #  Depth: full_pdf (PRO) — page-aware, fine chunks, page metadata
+    # ------------------------------------------------------------------ #
+    def _ingest_full_pdf(
+            self,
+            paper: dict,
+            citation_id: str,
+            chunk_size: int,
+            log: Callable[[str], None],
+    ) -> tuple[list[str], str, str]:
+        """
+        PRO: download the full PDF and index it page-by-page, so every chunk
+        carries its page number (fine-grained reference for the Critic).
+        Silent per-paper fallback to abstract-only if no usable PDF.
+
+        Returns ``(chunk_ids, ingestion_status, depth)``.
+        """
+        url = paper.get("openAccessPdf")
+        paper_id = paper.get("paperId") or citation_id
+
+        if url:
+            log(f"   ⬇️ {citation_id} Downloading & parsing full PDF…")
+
+        pdf_result = fetch_pdf_text(url, paper_id)
+
+        if pdf_result.pages:
+            chunk_ids = self.vector_engine.index_paper_by_pages(
+                pages=pdf_result.pages,
+                citation_id=citation_id,
+                chunk_size=chunk_size,
+                metadata=self._meta(paper),
+            )
+            if chunk_ids:
+                return (chunk_ids, "success_pdf", "full_pdf")
 
         # Silent per-paper fallback to abstract-only.
         return self._ingest_abstract(
