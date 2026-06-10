@@ -10,3 +10,4 @@ requests
 langgraph
 langchain-core
 PyYAML
+PyMuPDF==1.27.2.3

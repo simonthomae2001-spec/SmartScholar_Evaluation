@@ -43,7 +43,6 @@ from src.agents.analyst_agent import AnalystAgent
 from src.agents.critic_agent import CriticAgent
 from src.agents.synthesizer_agent import SynthesizerAgent
 
-
 # ------------------------------------------------------------------ #
 #  Shared agent singletons (created once, reused across invocations)
 # ------------------------------------------------------------------ #
@@ -123,21 +122,72 @@ def gatekeeper_node(state: GraphState, config: RunnableConfig) -> dict:
     """
     Steps 2 & 9 — Validate the user query.
 
-    Sets ``is_valid``, ``validation_reason``, and bootstraps
-    ``research_config`` for legacy UI compatibility.
+    Sets ``is_valid``, ``validation_reason``, and Gatekeeper confirmation
+    metadata used by the UI retry flow.
     """
     _ui_log(config, "⚙️ [System] Starting Gatekeeper Agent...")
+
+    if state.get("gatekeeper_confirmed", False) and state.get(
+            "gatekeeper_override_allowed", False
+    ):
+        reason = "Durch Benutzerbestätigung akzeptiert."
+        _ui_log(config, f"✅ [Gatekeeper] Query accepted: {reason}")
+        return {
+            "is_valid": True,
+            "validation_reason": reason,
+            "gatekeeper_needs_confirmation": False,
+            "gatekeeper_confirmed": True,
+            "gatekeeper_severity": "none",
+            "gatekeeper_can_override": False,
+            "gatekeeper_follow_up_question": None,
+            "gatekeeper_override_allowed": False,
+        }
+
+    if state.get("gatekeeper_confirmed", False):
+        reason = "Diese Ablehnung kann nicht per Benutzerbestätigung überschrieben werden."
+        _ui_log(config, f"❌ [Gatekeeper] Query rejected: {reason}")
+        return {
+            "is_valid": False,
+            "validation_reason": reason,
+            "gatekeeper_needs_confirmation": False,
+            "gatekeeper_confirmed": False,
+            "gatekeeper_severity": "security_critical",
+            "gatekeeper_can_override": False,
+            "gatekeeper_follow_up_question": None,
+            "gatekeeper_override_allowed": False,
+        }
+
     agent = _get_gatekeeper()
-    is_valid, reason = agent.validate_input(state.get("user_query", ""))
+    decision = agent.evaluate_input(
+        user_input=state.get("user_query", ""),
+    )
+    is_valid = bool(decision.get("is_valid", False))
+    reason = str(decision.get("reason", ""))
+    severity = str(decision.get("severity", "none" if is_valid else "content_issue"))
+    can_override = bool(decision.get("can_override", False))
+    follow_up_question = decision.get("follow_up_question")
+
+    if severity == "security_critical":
+        can_override = False
+
+    needs_confirmation = bool(not is_valid and can_override)
 
     if is_valid:
         _ui_log(config, f"✅ [Gatekeeper] Query accepted: {reason}")
+    elif needs_confirmation:
+        _ui_log(config, f"❓ [Gatekeeper] Query needs confirmation: {reason}")
     else:
         _ui_log(config, f"❌ [Gatekeeper] Query rejected: {reason}")
 
     return {
         "is_valid": is_valid,
         "validation_reason": reason,
+        "gatekeeper_needs_confirmation": needs_confirmation,
+        "gatekeeper_confirmed": state.get("gatekeeper_confirmed", False),
+        "gatekeeper_severity": severity,
+        "gatekeeper_can_override": can_override,
+        "gatekeeper_follow_up_question": follow_up_question,
+        "gatekeeper_override_allowed": False,
     }
 
 
@@ -156,7 +206,7 @@ def researcher_enhance_node(state: GraphState, config: RunnableConfig) -> dict:
         user_query=state["user_query"],
         config=cfg,
     )
-    
+
     if strategy:
         _ui_log(config, f"🧠 [Researcher] Strategy: {strategy}")
     _ui_log(config, f"✅ [System] Generated {len(queries)} search queries.")
@@ -189,7 +239,7 @@ def researcher_search_node(state: GraphState, config: RunnableConfig) -> dict:
     # 2. Score, rank, and split
     _ui_log(config, f"🏆 [System] Scoring & ranking {len(papers)} retrieved papers...")
     active, discarded = agent.evaluate_papers(papers, state["user_query"], cfg)
-    
+
     _ui_log(config, f"✅ [System] Retained {len(active)} active papers ({len(discarded)} in reserve pool).")
 
     return {
@@ -207,9 +257,13 @@ def ingestor_node(state: GraphState, config: RunnableConfig) -> dict:
     agent = _get_ingestor()
     cfg = _resolve_config(state)
 
+    # Bridge the agent's progress messages to the Streamlit UI queue, so the
+    # UI doesn't freeze during (potentially slow) ingestion.
+    def _agent_cb(msg: str):
+        _ui_log(config, msg)
+
     papers = state.get("active_papers", [])
-    _ui_log(config, f"📚 [Ingestor] Ingesting {len(papers)} papers...")
-    ingested = agent.ingest_knowledge(papers, cfg)
+    ingested = agent.ingest_knowledge(papers, cfg, status_callback=_agent_cb)
     _ui_log(config, "✅ [System] Ingestion complete.")
 
     return {"active_papers": ingested}
@@ -366,12 +420,17 @@ def build_search_graph():
 
 def build_analysis_graph():
     """
-    Construct a **partial** graph used by the Streamlit UI to run the
-    analyst loop after the user has confirmed the papers.
+    Construct a **partial** graph used by the Streamlit UI after the user has
+    finalised the papers: first ingest the selected papers into ChromaDB,
+    then run the analyst.
+
+    Topology: START → ingestor_node → analyst_node → END
     """
     graph = StateGraph(GraphState)
+    graph.add_node("ingestor_node", ingestor_node)
     graph.add_node("analyst_node", analyst_node)
-    graph.add_edge(START, "analyst_node")
+    graph.add_edge(START, "ingestor_node")
+    graph.add_edge("ingestor_node", "analyst_node")
     graph.add_edge("analyst_node", END)
     return graph.compile()
 
