@@ -1,0 +1,27 @@
+mock_graph_state = {
+    "user_query": "Impact of Agentic RAG pipelines on the efficiency and accuracy of scientific literature reviews",
+    "config_profile": "medium",
+    "paper_analysis_data": [
+        {
+            "citation_id": "[1]",
+            "methodology": "Comparative study evaluating Agentic RAG pipelines against traditional keyword search across 500 scientific papers using Llama-3.",
+            "findings": "Agentic RAG reduced manual curation time by 40% and improved thematic relevance scores by 25%. Multi-agent loops with a 'Critic' node caught 80% more factual inconsistencies.",
+            "limitations": "The study only evaluated open-source LLMs and limited vector stores (ChromaDB), ignoring proprietary models like GPT-4.",
+            "user_relevance": "Highly relevant. Directly quantifies the efficiency and accuracy improvements of Agentic RAG asked in the query."
+        },
+        {
+            "citation_id": "[2]",
+            "methodology": "Systematic review of human-in-the-loop (HITL) breakpoints in multi-agent research systems.",
+            "findings": "Incorporating HITL breakpoints between query expansion and paper selection increased user trust by 60% and prevented LLM topic drift in 90% of edge cases.",
+            "limitations": "Small sample size of human evaluators (n=15). Did not measure raw time-to-completion.",
+            "user_relevance": "Relevant context. Shows that while accuracy increases, human breakpoints might impact total automation efficiency."
+        },
+        {
+            "citation_id": "[3]",
+            "methodology": "Benchmarking study on chunking strategies (abstract vs. full-text) in scientific RAG applications.",
+            "findings": "Full-text chunking increased hallucination rates by 12% compared to hybrid abstract-first approaches, due to noise in methodology sections. Abstract-only search was fastest but missed key limitations.",
+            "limitations": "Did not test semantic chunking, only static character-limit chunking (512 vs 1024 chars).",
+            "user_relevance": "Moderately relevant. Explains underlying mechanics of why Agentic RAG might struggle with accuracy depending on ingestion depth."
+        }
+    ]
+}

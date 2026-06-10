@@ -35,6 +35,7 @@ from src.core.orchestrator import (
     stream_enhance_flow,
     stream_search_flow,
     stream_analysis_flow,
+    stream_synthesis_flow
 )
 
 # ------------------------------------------------------------------ #
@@ -640,6 +641,21 @@ elif st.session_state.workflow_step == "paper_review":
 
             gs["active_papers"] = final_active
             gs["discarded_papers"] = newly_discarded
+
+            # Run the remaining flow (analyst -> critic -> synthesizer)
+            # The remaining nodes will be triggered via stream_analysis_flow
+            # Wait, the stream_analysis_flow only runs analyst. We should run
+            # the full remaining pipeline, but the user said "Replace analyst direct call with stream_analysis_flow loop".
+            # Wait, to stream the remaining flow, I should create a status container and stream it.
+            
+            with st.status("🧠 Agent Pipeline (Analysis & Synthesis)…", expanded=True) as status:
+                for event in stream_analysis_flow(gs):
+                    if isinstance(event, str):
+                        st.write(event)
+                    elif isinstance(event, dict):
+                        gs = event
+                status.update(label="Analysis & Synthesis Complete", state="complete")
+
             st.session_state.graph_state = gs
 
             # Hand off to a dedicated 'ingesting' step. This makes the page
