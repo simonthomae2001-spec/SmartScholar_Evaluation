@@ -12,3 +12,5 @@ __pycache__/
 # PyCharm / IntelliJ
 .idea/
 *.iml
+
+data/chroma_db/
