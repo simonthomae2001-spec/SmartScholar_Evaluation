@@ -263,10 +263,10 @@ def ingestor_node(state: GraphState, config: RunnableConfig) -> dict:
         _ui_log(config, msg)
 
     papers = state.get("active_papers", [])
-    ingested = agent.ingest_knowledge(papers, cfg, status_callback=_agent_cb)
+    ingested, vector_engine = agent.ingest_knowledge(papers, cfg, status_callback=_agent_cb)
     _ui_log(config, "✅ [System] Ingestion complete.")
 
-    return {"active_papers": ingested}
+    return {"active_papers": ingested, "vectorEngine": vector_engine}
 
 
 def analyst_node(state: GraphState, config: RunnableConfig) -> dict:
@@ -277,8 +277,12 @@ def analyst_node(state: GraphState, config: RunnableConfig) -> dict:
     agent = _get_analyst()
     papers = state.get("active_papers", [])
     query = state.get("user_query", "")
+    vector_engine = state.get("vectorEngine")
 
-    analysis_data = agent.analyze_papers(papers, query)
+    def _agent_cb(msg: str):
+        _ui_log(config, msg)
+
+    analysis_data = agent.analyze_papers(papers, query, vector_engine, _agent_cb)
     _ui_log(config, "✅ [System] Analysis complete.")
 
     return {"paper_analysis_data": analysis_data}

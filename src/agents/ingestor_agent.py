@@ -23,7 +23,7 @@ Status vocabulary (decision F — feeds observability + Termin-5 metrics):
 """
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Tuple
 
 from src.core.vector_store import VectorEngine
 from src.tools.pdf_tool import fetch_pdf_text
@@ -44,7 +44,7 @@ class IngestorAgent:
             papers: list[dict],
             config: dict,
             status_callback: Callable[[str], None] | None = None,
-    ) -> list[dict]:
+    ) -> Tuple[list[dict], VectorEngine]:
         """
         Ingest all papers into a fresh ChromaDB collection.
 
@@ -100,7 +100,7 @@ class IngestorAgent:
             )
 
         _log(f"✅ [Ingestor] Done — {len(papers)} papers ingested.")
-        return papers
+        return papers, self.vector_engine
 
     # ------------------------------------------------------------------ #
     #  Depth: abstract-only (FAST + the silent fallback for MEDIUM/PRO)

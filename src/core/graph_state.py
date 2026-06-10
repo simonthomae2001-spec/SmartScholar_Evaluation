@@ -9,7 +9,7 @@ Defines:
 from __future__ import annotations
 
 from typing import TypedDict
-
+from src.core.vector_store import VectorEngine
 
 # ------------------------------------------------------------------ #
 #  Comprehensive LangGraph state (all 16 steps)
@@ -80,6 +80,7 @@ class GraphState(TypedDict, total=False):
     query_strategy: str
     active_papers: list[dict]
     discarded_papers: list[dict]
+    vectorEngine: VectorEngine
     paper_analysis_data: list[dict]
     critic_feedback: str
     loop_count: int
