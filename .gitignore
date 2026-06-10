@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # ignore device specific project files
 .idea/
 .vscode/
@@ -224,7 +223,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-=======
+
 # Virtual environment
 .venv/
 
@@ -239,4 +238,3 @@ __pycache__/
 # PyCharm / IntelliJ
 .idea/
 *.iml
->>>>>>> dev_Oliver_criticAgent

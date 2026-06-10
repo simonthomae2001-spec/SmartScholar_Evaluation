@@ -148,6 +148,10 @@ _DEFAULTS = {
     "search_queries_edit": None,  # list — mutable copy for the review UI
     "trace_steps": [],
     "query_gen": 0,               # bumped on every Regenerate to force fresh widget keys
+    "gatekeeper_error": None,     # str — last rejection reason shown on idle
+    "gatekeeper_pending_query": None,
+    "gatekeeper_confirmed": False,
+    "gatekeeper_override_allowed": False,
 }
 
 for key, default in _DEFAULTS.items():
@@ -174,6 +178,85 @@ def _reset_workflow():
     """Clear all workflow state and return to idle."""
     for key, default in _DEFAULTS.items():
         st.session_state[key] = default
+
+
+def _is_gatekeeper_confirmation(text: str) -> bool:
+    """Return True when the user confirms a pending Gatekeeper override."""
+    normalized = text.strip().lower()
+    return normalized in {
+        "ja",
+        "yes",
+        "y",
+        "ok",
+        "okay",
+        "mach weiter",
+        "weiter",
+        "fortfahren",
+        "trotzdem fortfahren",
+        "trotzdem weitermachen",
+        "weiter machen",
+        "continue",
+        "proceed",
+    }
+
+
+def _confirm_pending_gatekeeper_query() -> None:
+    """Continue with the previously rejected/unclear query after user confirmation."""
+    if not st.session_state.gatekeeper_pending_query:
+        return
+
+    st.session_state.gatekeeper_error = None
+    st.session_state.current_query = st.session_state.gatekeeper_pending_query
+    st.session_state.gatekeeper_pending_query = None
+    st.session_state.gatekeeper_confirmed = True
+    st.session_state.gatekeeper_override_allowed = True
+    st.session_state.graph_state = None
+    st.session_state.search_queries_edit = None
+    st.session_state.trace_steps = []
+    st.session_state.query_gen = 0
+    st.session_state.workflow_step = "enhancing"
+
+
+def _gatekeeper_rejection(state: GraphState | None) -> str | None:
+    """Return the rejection reason if the Gatekeeper explicitly rejected."""
+    if state and state.get("is_valid") is False:
+        return state.get("validation_reason") or "The query was rejected by the Gatekeeper."
+    return None
+
+
+def _reset_after_gatekeeper_rejection(state: GraphState, trace: list[str]) -> None:
+    """Store rejection details and reset the workflow so the user can retry."""
+    needs_confirmation = state.get("gatekeeper_needs_confirmation", False)
+    was_confirmed = state.get("gatekeeper_confirmed", False)
+    can_override = state.get("gatekeeper_can_override", False)
+    follow_up = state.get("gatekeeper_follow_up_question")
+
+    st.session_state.graph_state = state
+    st.session_state.search_queries_edit = None
+    st.session_state.trace_steps = trace
+    st.session_state.query_gen = 0
+    rejection = _gatekeeper_rejection(state)
+    st.session_state.gatekeeper_error = (
+        f"{rejection}\n\n{follow_up}"
+        if follow_up and rejection and follow_up != rejection
+        else follow_up or rejection
+    )
+    st.session_state.gatekeeper_pending_query = (
+        state.get("user_query")
+        if needs_confirmation and can_override and not was_confirmed
+        else None
+    )
+    st.session_state.gatekeeper_confirmed = False
+    st.session_state.gatekeeper_override_allowed = False
+    st.session_state.workflow_step = "idle"
+
+
+def _rerun_if_gatekeeper_rejected() -> None:
+    """Prevent stale invalid graph state from reaching later workflow steps."""
+    state = st.session_state.graph_state
+    if _gatekeeper_rejection(state):
+        _reset_after_gatekeeper_rejection(state, st.session_state.trace_steps)
+        st.rerun()
 
 
 # ------------------------------------------------------------------ #
@@ -256,8 +339,32 @@ if st.session_state.workflow_step != "idle":
 #  STEP 0 — Idle: accept user input
 # ================================================================== #
 if st.session_state.workflow_step == "idle":
+    if st.session_state.gatekeeper_error:
+        if st.session_state.gatekeeper_pending_query:
+            st.warning(st.session_state.gatekeeper_error)
+            if st.button("Als Research-Task bestätigen", type="primary"):
+                _confirm_pending_gatekeeper_query()
+                st.rerun()
+        else:
+            st.error(st.session_state.gatekeeper_error)
+
     query = st.chat_input("What would you like to research today?")
     if query:
+        if (
+            st.session_state.gatekeeper_pending_query
+            and _is_gatekeeper_confirmation(query)
+        ):
+            _confirm_pending_gatekeeper_query()
+            st.rerun()
+
+        st.session_state.gatekeeper_error = None
+        st.session_state.gatekeeper_pending_query = None
+        st.session_state.gatekeeper_confirmed = False
+        st.session_state.gatekeeper_override_allowed = False
+        st.session_state.graph_state = None
+        st.session_state.search_queries_edit = None
+        st.session_state.trace_steps = []
+        st.session_state.query_gen = 0
         st.session_state.current_query = query
         st.session_state.workflow_step = "enhancing"
         st.rerun()
@@ -272,6 +379,7 @@ elif st.session_state.workflow_step == "enhancing":
 
     with st.status("🧠 Expanding your query into academic search terms…", expanded=True) as status:
         trace = []
+        result: GraphState = {}
 
         def _log(msg):
             st.write(msg)
@@ -281,6 +389,8 @@ elif st.session_state.workflow_step == "enhancing":
             initial_state: GraphState = {
                 "user_query": st.session_state.current_query,
                 "config_profile": st.session_state.config_profile,
+                "gatekeeper_confirmed": st.session_state.gatekeeper_confirmed,
+                "gatekeeper_override_allowed": st.session_state.gatekeeper_override_allowed,
             }
             stream = stream_enhance_flow(initial_state, regenerate=False)
         else:
@@ -294,6 +404,12 @@ elif st.session_state.workflow_step == "enhancing":
                 # Final graph state
                 result = event
 
+        rejection = _gatekeeper_rejection(result)
+        if rejection:
+            _reset_after_gatekeeper_rejection(result, trace)
+            status.update(label="Query rejected by Gatekeeper", state="error", expanded=False)
+            st.rerun()
+
         queries = result.get("search_queries", [])
         for i, q in enumerate(queries, 1):
             _log(f"   {i}. `{q}`")
@@ -301,6 +417,8 @@ elif st.session_state.workflow_step == "enhancing":
         st.session_state.graph_state = result
         st.session_state.search_queries_edit = list(queries)
         st.session_state.trace_steps = trace
+        st.session_state.gatekeeper_confirmed = False
+        st.session_state.gatekeeper_override_allowed = False
         status.update(label="Queries Generated", state="complete", expanded=False)
 
     st.session_state.workflow_step = "query_review"
@@ -311,6 +429,8 @@ elif st.session_state.workflow_step == "enhancing":
 #  STEP 2 — Query Review: human edits / accepts queries
 # ================================================================== #
 elif st.session_state.workflow_step == "query_review":
+    _rerun_if_gatekeeper_rejected()
+
     with st.chat_message("user"):
         st.write(st.session_state.current_query)
 
@@ -386,6 +506,8 @@ elif st.session_state.workflow_step == "query_review":
 #  STEP 3 — Searching: fetch + score papers
 # ================================================================== #
 elif st.session_state.workflow_step == "searching":
+    _rerun_if_gatekeeper_rejected()
+
     with st.chat_message("user"):
         st.write(st.session_state.current_query)
 
@@ -417,6 +539,8 @@ elif st.session_state.workflow_step == "searching":
 #  STEP 4 — Paper Review: curate the active set
 # ================================================================== #
 elif st.session_state.workflow_step == "paper_review":
+    _rerun_if_gatekeeper_rejected()
+
     with st.chat_message("user"):
         st.write(st.session_state.current_query)
 
@@ -540,6 +664,8 @@ elif st.session_state.workflow_step == "paper_review":
 #  STEP 5 — Done: show final selection with citation IDs
 # ================================================================== #
 elif st.session_state.workflow_step == "done":
+    _rerun_if_gatekeeper_rejected()
+
     with st.chat_message("user"):
         st.write(st.session_state.current_query)
 

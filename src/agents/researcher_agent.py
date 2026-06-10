@@ -10,6 +10,7 @@ Key capabilities:
     evaluate_papers()     – LLM-based relevance scoring (0-100) with per-paper
                             rationale and heuristic fallback.
 """
+from __future__ import annotations
 
 import json
 import re

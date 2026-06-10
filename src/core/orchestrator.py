@@ -123,21 +123,72 @@ def gatekeeper_node(state: GraphState, config: RunnableConfig) -> dict:
     """
     Steps 2 & 9 — Validate the user query.
 
-    Sets ``is_valid``, ``validation_reason``, and bootstraps
-    ``research_config`` for legacy UI compatibility.
+    Sets ``is_valid``, ``validation_reason``, and Gatekeeper confirmation
+    metadata used by the UI retry flow.
     """
     _ui_log(config, "⚙️ [System] Starting Gatekeeper Agent...")
+
+    if state.get("gatekeeper_confirmed", False) and state.get(
+        "gatekeeper_override_allowed", False
+    ):
+        reason = "Durch Benutzerbestätigung akzeptiert."
+        _ui_log(config, f"✅ [Gatekeeper] Query accepted: {reason}")
+        return {
+            "is_valid": True,
+            "validation_reason": reason,
+            "gatekeeper_needs_confirmation": False,
+            "gatekeeper_confirmed": True,
+            "gatekeeper_severity": "none",
+            "gatekeeper_can_override": False,
+            "gatekeeper_follow_up_question": None,
+            "gatekeeper_override_allowed": False,
+        }
+
+    if state.get("gatekeeper_confirmed", False):
+        reason = "Diese Ablehnung kann nicht per Benutzerbestätigung überschrieben werden."
+        _ui_log(config, f"❌ [Gatekeeper] Query rejected: {reason}")
+        return {
+            "is_valid": False,
+            "validation_reason": reason,
+            "gatekeeper_needs_confirmation": False,
+            "gatekeeper_confirmed": False,
+            "gatekeeper_severity": "security_critical",
+            "gatekeeper_can_override": False,
+            "gatekeeper_follow_up_question": None,
+            "gatekeeper_override_allowed": False,
+        }
+
     agent = _get_gatekeeper()
-    is_valid, reason = agent.validate_input(state.get("user_query", ""))
+    decision = agent.evaluate_input(
+        user_input=state.get("user_query", ""),
+    )
+    is_valid = bool(decision.get("is_valid", False))
+    reason = str(decision.get("reason", ""))
+    severity = str(decision.get("severity", "none" if is_valid else "content_issue"))
+    can_override = bool(decision.get("can_override", False))
+    follow_up_question = decision.get("follow_up_question")
+
+    if severity == "security_critical":
+        can_override = False
+
+    needs_confirmation = bool(not is_valid and can_override)
 
     if is_valid:
         _ui_log(config, f"✅ [Gatekeeper] Query accepted: {reason}")
+    elif needs_confirmation:
+        _ui_log(config, f"❓ [Gatekeeper] Query needs confirmation: {reason}")
     else:
         _ui_log(config, f"❌ [Gatekeeper] Query rejected: {reason}")
 
     return {
         "is_valid": is_valid,
         "validation_reason": reason,
+        "gatekeeper_needs_confirmation": needs_confirmation,
+        "gatekeeper_confirmed": state.get("gatekeeper_confirmed", False),
+        "gatekeeper_severity": severity,
+        "gatekeeper_can_override": can_override,
+        "gatekeeper_follow_up_question": follow_up_question,
+        "gatekeeper_override_allowed": False,
     }
 
 
