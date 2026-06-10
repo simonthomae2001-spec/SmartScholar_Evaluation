@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import os
 import re
+from time import sleep
 from dataclasses import dataclass, field
 
 import requests
@@ -140,7 +141,13 @@ def _get_pdf_bytes(url: str, paper_id: str) -> bytes | None:
     if cached is not None:
         return cached
 
-    raw = _download_pdf(url)
+    raw = None
+    retries = 0
+
+    while raw is None and retries <4:
+        raw = _download_pdf(url)
+        retries +=1
+    
     if raw is None:
         return None
 
@@ -180,6 +187,7 @@ def _download_pdf(url: str) -> bytes | None:
     """
     headers = {"User-Agent": _USER_AGENT, "Accept": "application/pdf"}
 
+    sleep(0.5)
     try:
         with requests.get(
             url,
