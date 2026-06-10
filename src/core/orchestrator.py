@@ -314,14 +314,22 @@ def critic_node(state: GraphState, config: RunnableConfig) -> dict:
 def synthesizer_node(state: GraphState, config: RunnableConfig) -> dict:
     """
     Step 16 — Compose the final literature review from approved claims.
-    """
-    _ui_log(config, "⚙️ [System] Starting Synthesizer Agent...")
-    agent = _get_synthesizer()
-    claims = state.get("paper_analysis_data", [])
 
-    review = agent.synthesize_review(claims)
-    _ui_log(config, "✅ [System] Final review synthesized.")
-    return {"final_review": review}
+    Übergibt die verifizierten Analysedaten vollautomatisch an den
+    echten SynthesizerAgent, der nun die finale Review generiert.
+    """
+    _ui_log(config, "📝 [System] Starte die finale Text-Synthese aus echten Daten...")
+
+    # 1. Instanz des echten Agenten holen (wird über das Singleton oben gelöst)
+    agent = _get_synthesizer()
+
+    # 2. Den Agenten mit dem aktuellen Zustand (inkl. der echten 'paper_analysis_data') aufrufen
+    agent_output = agent.synthesize_review(state, config)
+
+    _ui_log(config, "✅ [System] Text-Synthese erfolgreich abgeschlossen.")
+
+    # 3. Das Ergebnis (enthält den Key 'final_review') an den Graphen zurückgeben
+    return agent_output
 
 
 # ------------------------------------------------------------------ #
@@ -448,6 +456,22 @@ def build_analysis_graph():
     return graph.compile()
 
 
+def build_synthesizer_graph():
+    """
+    Baut einen isolierten, linearen GRAPHEN nur für die Textgenerierung.
+    """
+    builder = StateGraph(GraphState)
+
+    # Node registrieren
+    builder.add_node("synthesizer_node", synthesizer_node)
+
+    # Linearen Ablauf definieren: START -> Synthesizer -> END
+    builder.add_edge(START, "synthesizer_node")
+    builder.add_edge("synthesizer_node", END)
+
+    return builder.compile()
+
+
 def build_graph():
     """
     Construct and compile the **full** SmartScholar LangGraph covering
@@ -570,4 +594,10 @@ def stream_search_flow(state: GraphState) -> Generator[str | dict, None, None]:
 def stream_analysis_flow(state: GraphState) -> Generator[str | dict, None, None]:
     """Stream the analyst stub node."""
     graph = build_analysis_graph()
+    yield from _run_graph_with_queue(graph, state)
+
+
+def stream_synthesis_flow(state: GraphState) -> Generator[str | dict, None, None]:
+    """Stream the analyst stub node."""
+    graph = build_synthesizer_graph()
     yield from _run_graph_with_queue(graph, state)
