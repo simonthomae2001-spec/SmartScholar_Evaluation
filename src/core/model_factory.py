@@ -13,9 +13,10 @@ class ModelFactory:
         # Load environment variables
         ModelFactory._load_env()
         model_name = os.getenv("MODEL_NAME", "llama3")
+        context_size = int(os.getenv("CONTEXT_SIZE", 8192))
 
         # Initialize and return the Ollama model
-        return Ollama(model=model_name, request_timeout=300.0)
+        return Ollama(model=model_name, request_timeout=300.0, context_window=context_size)
 
     @staticmethod
     def get_model_name() -> str:
