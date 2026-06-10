@@ -36,19 +36,18 @@ class AnalystAgent:
             ``citation_id``, ``methodology``, ``findings``,
             ``limitations``, ``user_relevance``.
         """
+        # ================= MOCK FOR CRITIC TESTING =================
         analysis_data: list[dict] = []
 
-        for idx, paper in enumerate(papers, start=1):
+        for paper in papers:
             record = {
-                "citation_id": f"[{idx}]",
-                "methodology": f"Methodology stub for '{paper.get('title', 'Untitled')}'.",
-                "findings": f"Key findings stub for '{paper.get('title', 'Untitled')}'.",
-                "limitations": "Limitations not yet extracted (stub).",
-                "user_relevance": (
-                    f"Relevance to '{query[:80]}' — "
-                    f"assessed as HIGH (stub)."
-                ),
+                "citation_id": paper.get("citation_id", "[?]"),
+                "methodology": "[MOCK] The analysis was conducted using comparative deep learning architectures.",
+                "findings": "[MOCK] The study shows that Swin Transformers achieve significantly higher accuracy than EfficientNet in classifying endoscopic images.",
+                "limitations": "[MOCK] Lack of diversity in the training dataset.",
+                "user_relevance": "[MOCK] High. Test dataset for Critic-Loop."
             }
             analysis_data.append(record)
 
         return analysis_data
+        # ==========================================================

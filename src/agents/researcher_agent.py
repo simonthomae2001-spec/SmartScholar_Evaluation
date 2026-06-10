@@ -41,11 +41,9 @@ class ResearcherAgent:
         "related to the user's topic.\n"
         "- Use concise academic concepts, NOT full sentences.\n"
         "- Use precise scientific terminology.\n"
-        "- Return ONLY a valid JSON object — no markdown, no explanation.\n\n"
-        "The JSON object MUST have exactly two keys:\n"
-        '  "strategy": A 1-2 sentence internal monologue explaining why you '
-        "chose these specific search angles.\n"
-        '  "queries": A JSON array of EXACTLY {num_queries} query strings.\n\n'
+        "- THINK FIRST: Before listing queries, explain your reasoning in the "
+        "\"strategy\" field. This forces you to articulate WHY you chose these "
+        "specific search angles.\n\n"
         "Example output (Note: you MUST generate EXACTLY {num_queries} queries, not 3!):\n"
         '{{\n'
         '  "strategy": "I focus on the core algorithm, its real-world deployment '
@@ -58,7 +56,17 @@ class ResearcherAgent:
         '  ]\n'
         '}}\n\n'
         "User topic: {user_input}\n\n"
-        "JSON object:"
+        "YOU MUST RESPOND ONLY WITH A VALID JSON OBJECT. "
+        "DO NOT ADD ANY CONVERSATIONAL TEXT BEFORE OR AFTER THE JSON.\n"
+        "YOU MUST FOLLOW THIS EXACT STRUCTURE, WRITING THE STRATEGY FIRST:\n"
+        '{{\n'
+        '  "strategy": "Explain your step-by-step reasoning for choosing '
+        'these specific search terms.",\n'
+        '  "queries": [\n'
+        '    "query 1",\n'
+        '    "query 2"\n'
+        '  ]\n'
+        '}}'
     )
 
     # ------------------------------------------------------------------ #
@@ -96,26 +104,33 @@ class ResearcherAgent:
         Prompt the LLM to produce *num_queries* refined search queries for
         the given topic, together with a strategy explanation.
 
+        The parsing logic handles three scenarios gracefully:
+
+        - **Path A (Success):** The LLM returns a valid JSON object with
+          both ``"strategy"`` and ``"queries"`` keys.
+        - **Path B (Fallback 1 — Array Only):** The LLM ignores the CoT
+          instruction and returns a plain JSON array of query strings.
+          The queries are accepted and a synthetic strategy message is
+          generated.
+        - **Path C (Fallback 2 — Total Failure):** Parsing fails entirely.
+          Returns an empty list and an error strategy string.
+
         Returns
         -------
         tuple[list[str], str]
             ``(queries, strategy)`` — the list of search strings and
             a 1-2 sentence explanation of the chosen search angles.
-            Falls back to ``([user_input], fallback_message)`` on
-            any parsing error.
         """
         prompt = self.QUERY_EXPANSION_PROMPT.format(
             user_input=user_input,
             num_queries=num_queries,
         )
 
-        fallback_strategy = "Fallback: could not generate additional queries."
-
         try:
             response = self.llm.complete(prompt)
             raw_text = str(response).strip()
 
-            # Try to extract JSON object with strategy + queries
+            # ---- Path A: valid JSON object with strategy + queries ---- #
             parsed = self._parse_json_object(raw_text)
 
             if parsed and isinstance(parsed, dict):
@@ -124,21 +139,28 @@ class ResearcherAgent:
 
                 if isinstance(queries_raw, list) and len(queries_raw) >= 1:
                     queries = [str(q) for q in queries_raw[:num_queries]]
-                    return (queries, strategy or fallback_strategy)
+                    return (
+                        queries,
+                        strategy or "LLM returned queries but did not provide a strategy.",
+                    )
 
-            # Legacy fallback: maybe the LLM returned a plain array
+            # ---- Path B: LLM returned a plain array (format amnesia) -- #
             queries = self._parse_json_array(raw_text)
             if queries and isinstance(queries, list) and len(queries) >= 1:
                 return (
                     [str(q) for q in queries[:num_queries]],
-                    fallback_strategy,
+                    "LLM generated the search queries directly as a list. "
+                    "Internal chain-of-thought reasoning was skipped.",
                 )
 
         except Exception as e:
             print(f"[ResearcherAgent] Query expansion failed: {e}")
 
-        # Fallback: return empty list
-        return ([], fallback_strategy)
+        # ---- Path C: total parsing failure ---- #
+        return (
+            [],
+            "Fallback: LLM could not generate valid search queries.",
+        )
 
     # ------------------------------------------------------------------ #
     #  Profile-aware prompt enhancement

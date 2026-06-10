@@ -294,12 +294,12 @@ def critic_node(state: GraphState, config: RunnableConfig) -> dict:
     loop_count = state.get("loop_count", 0)
     analysis_data = state.get("paper_analysis_data", [])
 
-    passed, feedback = agent.verify_facts(analysis_data, cfg, loop_count)
+    def _agent_cb(msg: str):
+        _ui_log(config, msg)
 
-    if passed:
-        _ui_log(config, "✅ [Critic] Passed! All claims verified.")
-    else:
-        _ui_log(config, f"⚠️ [Critic] Failed verification: {feedback}")
+    passed, feedback = agent.verify_facts(
+        analysis_data, cfg, loop_count, status_callback=_agent_cb,
+    )
 
     updates: dict = {
         "critic_feedback": feedback,
@@ -422,16 +422,29 @@ def build_analysis_graph():
     """
     Construct a **partial** graph used by the Streamlit UI after the user has
     finalised the papers: first ingest the selected papers into ChromaDB,
-    then run the analyst.
+    then run the analyst, critic, and synthesizer.
 
-    Topology: START → ingestor_node → analyst_node → END
+    Topology: START → ingestor_node → analyst_node → critic_node ↺ synthesizer_node → END
     """
     graph = StateGraph(GraphState)
     graph.add_node("ingestor_node", ingestor_node)
     graph.add_node("analyst_node", analyst_node)
+    graph.add_node("critic_node", critic_node)
+    graph.add_node("synthesizer_node", synthesizer_node)
+    
     graph.add_edge(START, "ingestor_node")
     graph.add_edge("ingestor_node", "analyst_node")
-    graph.add_edge("analyst_node", END)
+    graph.add_edge("analyst_node", "critic_node")
+    graph.add_conditional_edges(
+        "critic_node",
+        _route_after_critic,
+        {
+            "analyst_node": "analyst_node",
+            "synthesizer_node": "synthesizer_node",
+        },
+    )
+    graph.add_edge("synthesizer_node", END)
+    
     return graph.compile()
 
 
