@@ -181,6 +181,17 @@ class VectorEngine:
         """Return a query engine over the current collection."""
         return self._index.as_query_engine(llm=self.llm)
 
-    def get_retriever(self, similarity_top_k: int = 3):
-        """Return a retriever (vector search only, no LLM synthesis)."""
-        return self._index.as_retriever(similarity_top_k=similarity_top_k)
+    def get_retriever(self, similarity_top_k: int = 3, filters=None):
+        """Return a retriever (vector search only, no LLM synthesis).
+        
+        Parameters
+        ----------
+        similarity_top_k : int
+            Number of top results to return.
+        filters : MetadataFilters, optional
+            Metadata filters to apply (e.g., filter by title).
+        """
+        return self._index.as_retriever(
+            similarity_top_k=similarity_top_k,
+            filters=filters
+        )
