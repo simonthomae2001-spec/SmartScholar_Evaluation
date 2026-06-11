@@ -54,6 +54,16 @@ class AnalystAgent:
         self.vector_engine:VectorEngine =None
 
     def _generate_questions(self, title:str) ->List[str]:
+        """
+        Generates a list of questions in order to extract 
+        methodology, key findings, limitations of a given paper.
+
+        Parameters
+        ----------
+        title (str) : title of the paper to examine
+
+        Returns : List[str]
+        """
         prompt_text = self.SEARCH_PROMPT.format(title=title)
         prompt_template = PromptTemplate(template=prompt_text)
         questions = self.llm.structured_predict(
@@ -62,8 +72,19 @@ class AnalystAgent:
         )
         return questions.questions
 
+    # TODO: Filter for duplicates
     def _query_vector_db(self, title:str, questions:List[str]) ->List[str]:
-        """Query the vector DB for passages relevant to each question, filtered by paper title."""
+        """
+        Searches the vector database with a set of questions an and returns
+        the passages matching the Queries.
+
+        Parameters
+        ----------
+        title (str) : title of the paper to examine
+        questions (List[str]) : questions used as queries for the vector database
+
+        Returns : List[str]
+        """
         results = []
         # Create filter for this paper's title
         filters = MetadataFilters(filters=[MetadataFilter(
@@ -84,6 +105,16 @@ class AnalystAgent:
         return results
     
     def _generate_record(self, query_results: List[str], orig_query:str) ->AnalysisRecord:
+        """
+        Builds an AnalysisRecord that based on the information contained in the query_results.
+
+        Parameters
+        ----------
+        query_results (str) : title of the paper to examine
+        orig_query (str) : the original user query
+
+        Returns : AnalysisRecord
+        """
         prompt = self.SUMMARY_PROMPT.format(user_query=orig_query, passages=query_results)
         prompt_template = PromptTemplate(template=prompt)
         record = self.llm.structured_predict(
@@ -93,6 +124,16 @@ class AnalystAgent:
         return record
     
     def _extract_information(self, title:str, orig_query:str) ->AnalysisRecord:
+        """
+        Extracts information about metrology, key findings or limitations and relevance.
+
+        Parameters
+        ----------
+        title (str) : title of the paper to examine
+        orig_query (str) : the original user query
+
+        Returns : AnalysisRecord
+        """
         questions = self._generate_questions(title)
         self._log(f"❓Generated questions: ")
         for q in questions:
