@@ -16,6 +16,7 @@ Workflow steps (mapped to ``st.session_state.workflow_step``):
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import sys
 import os
 from datetime import datetime
@@ -35,7 +36,6 @@ from src.core.orchestrator import (
     stream_enhance_flow,
     stream_search_flow,
     stream_analysis_flow,
-    stream_synthesis_flow
 )
 
 # ------------------------------------------------------------------ #
@@ -133,6 +133,14 @@ st.markdown("""
     .step-indicator .current-step {
         color: #1a73e8;
         font-weight: 600;
+    }
+
+    /* Limit max height of trace elements to make them scrollable */
+    div[data-testid="stStatusWidget"] div[data-testid="stVerticalBlock"],
+    div[data-testid="stExpanderDetails"] {
+        max-height: 400px;
+        overflow-y: auto;
+        resize: vertical;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -259,6 +267,59 @@ def _rerun_if_gatekeeper_rejected() -> None:
         st.rerun()
 
 
+def _inject_scroll_hack():
+    """Injects JS to add smart auto-scrolling to trace containers."""
+    st.html("""
+    <script>
+    const parentDoc = window.document;
+    
+    function attachScroll() {
+        // Target expander details and Streamlit's native scrollable vertical blocks inside st.status
+        const containers = parentDoc.querySelectorAll('div[data-testid="stExpanderDetails"], div[data-testid="stStatusWidget"] div[data-testid="stVerticalBlock"]');
+        containers.forEach(c => {
+            if (c.dataset.scrollInit) return;
+            c.dataset.scrollInit = 'true';
+            c.dataset.isUserScrolling = 'false';
+            
+            // Listen to scroll events: if user scrolls up, pause auto-scroll
+            c.addEventListener('scroll', () => {
+                const atBottom = c.scrollTop + c.clientHeight >= c.scrollHeight - 10;
+                c.dataset.isUserScrolling = atBottom ? 'false' : 'true';
+            });
+        });
+    }
+
+    // Observe DOM for new text inside the containers
+    const observer = new MutationObserver(() => {
+        attachScroll();
+        const containers = parentDoc.querySelectorAll('div[data-testid="stExpanderDetails"], div[data-testid="stStatusWidget"] div[data-testid="stVerticalBlock"]');
+        containers.forEach(c => {
+            if (c.dataset.scrollInit === 'true' && c.dataset.isUserScrolling !== 'true') {
+                c.scrollTop = c.scrollHeight;
+            }
+        });
+    });
+    
+    observer.observe(parentDoc.body, { childList: true, subtree: true, characterData: true });
+
+    // Handle expander open event: reset scroll to bottom
+    parentDoc.addEventListener('toggle', (e) => {
+        if (e.target && e.target.open) {
+            setTimeout(() => {
+                const containers = e.target.querySelectorAll('div[data-testid="stExpanderDetails"], div[data-testid="stStatusWidget"] div[data-testid="stVerticalBlock"]');
+                containers.forEach(c => {
+                    if (c.dataset.scrollInit === 'true') {
+                        c.dataset.isUserScrolling = 'false';
+                        c.scrollTop = c.scrollHeight;
+                    }
+                });
+            }, 50);
+        }
+    }, true);
+    </script>
+    """)
+
+
 # ------------------------------------------------------------------ #
 #  Sidebar
 # ------------------------------------------------------------------ #
@@ -333,6 +394,9 @@ if st.session_state.workflow_step != "idle":
         unsafe_allow_html=True,
     )
 
+# Inject the auto-scroll JS globally
+_inject_scroll_hack()
+
 # ================================================================== #
 #  STEP 0 — Idle: accept user input
 # ================================================================== #
@@ -376,14 +440,16 @@ elif st.session_state.workflow_step == "enhancing":
         st.write(st.session_state.current_query)
 
     with st.status("🧠 Expanding your query into academic search terms…", expanded=True) as status:
-        trace = []
+        trace = list(st.session_state.trace_steps)
         result: GraphState = {}
 
+        # Pre-fill historical trace logs
+        for step in trace:
+            st.write(step)
 
         def _log(msg):
             st.write(msg)
             trace.append(msg)
-
 
         if st.session_state.query_gen == 0:
             initial_state: GraphState = {
@@ -514,13 +580,15 @@ elif st.session_state.workflow_step == "searching":
         st.write(st.session_state.current_query)
 
     with st.status("🔍 Searching Semantic Scholar & scoring papers…", expanded=True) as status:
-        trace = []
+        trace = list(st.session_state.trace_steps)
 
+        # Pre-fill historical trace logs
+        for step in trace:
+            st.write(step)
 
         def _log_s(msg):
             st.write(msg)
             trace.append(msg)
-
 
         gs = st.session_state.graph_state
 
@@ -663,15 +731,17 @@ elif st.session_state.workflow_step == "ingesting":
         st.write(st.session_state.current_query)
 
     with st.status(
-            "🧠 Agent Pipeline (Ingestion & Analysis)…", expanded=True
+            "🧠 Agent Pipeline (Ingestion, Analyse & Synthese)…", expanded=True
     ) as status:
-        trace = []
+        trace = list(st.session_state.trace_steps)
 
+        # Pre-fill historical trace logs
+        for step in trace:
+            st.write(step)
 
         def _log_i(msg):
             st.write(msg)
             trace.append(msg)
-
 
         gs = st.session_state.graph_state
 
@@ -685,7 +755,7 @@ elif st.session_state.workflow_step == "ingesting":
         st.session_state.trace_steps = trace
 
         status.update(
-            label="Ingestion & Analysis Complete",
+            label="Pipeline Completed!",
             state="complete",
             expanded=False,
         )
@@ -701,6 +771,12 @@ elif st.session_state.workflow_step == "done":
 
     with st.chat_message("user"):
         st.write(st.session_state.current_query)
+
+    # Persist the trace logs so the user can review the entire thought process
+    if st.session_state.trace_steps:
+        with st.expander("🧠 Agent Trace", expanded=False):
+            for step in st.session_state.trace_steps:
+                st.write(step)
 
     gs = st.session_state.graph_state
     active = gs.get("active_papers", [])
@@ -741,21 +817,19 @@ elif st.session_state.workflow_step == "done":
             st.markdown("---")
             st.markdown(f"{abstract}")
 
-    # Analyst stub output
+    # Final Review Output
     if review:
         st.markdown("---")
-        with st.expander("📝 Analyst Output (Stub)", expanded=True):
-            st.markdown(review)
+        st.markdown("### 📝 Final Literature Review")
+        st.markdown(review)
 
-    # Download final state as JSON
+    # Download final review as Markdown
     st.markdown("---")
-    import json
-
     today = datetime.now().strftime("%Y-%m-%d")
-    state_json = json.dumps(gs, indent=2, ensure_ascii=False, default=str)
+    review_text = gs.get("final_review", "") or "No review generated."
     st.download_button(
-        label="📥 Download Research State (.json)",
-        data=state_json,
-        file_name=f"smartscholar_state_{today}.json",
-        mime="application/json",
+        label="📥 Download Literature Review (.md)",
+        data=review_text,
+        file_name=f"smartscholar_review_{today}.md",
+        mime="text/markdown",
     )

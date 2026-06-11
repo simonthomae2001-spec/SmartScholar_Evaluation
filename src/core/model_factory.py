@@ -16,7 +16,8 @@ class ModelFactory:
         context_size = int(os.getenv("CONTEXT_SIZE", 8192))
 
         # Initialize and return the Ollama model
-        return Ollama(model=model_name, request_timeout=300.0, context_window=context_size)
+        # Initialize and return the Ollama model with a higher generation limit
+        return Ollama(model=model_name, request_timeout=300.0, context_window=context_size, additional_kwargs={"num_predict": 1024})
 
     @staticmethod
     def get_model_name() -> str:
