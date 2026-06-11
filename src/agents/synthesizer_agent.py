@@ -4,7 +4,7 @@ from typing import Callable
 
 logger = logging.getLogger(__name__)
 
-# Der System-Prompt als Konstante (auf Englisch für bessere LLM-Performance)
+# System-Prompt as a constant
 SYNTHESIS_PROMPT = """You are an expert academic researcher and highly skilled technical writer. 
 Your task is to synthesize a comprehensive, critical literature review based EXCLUSIVELY on the provided extracted paper data.
 
@@ -41,13 +41,13 @@ List the citation IDs and a one-sentence summary of their contribution based on 
 
 class SynthesizerAgent:
     def __init__(self):
-        # Initialisiert das LLM über die zentrale Factory, genau wie der ResearcherAgent
+        # Initializes LLM via the central ModelFactory
         self.llm = ModelFactory.get_model()
         logger.info("SynthesizerAgent initialisiert.")
 
     def synthesize_review(self, state: dict, config: dict, status_callback: Callable[[str], None] | None = None) -> dict:
         """
-        Generiert die finale Literature Review aus den strukturierten Analyse-Daten.
+        Generates the final literature review based on the structured analysis data.
         """
         def _log(msg: str):
             if status_callback:
@@ -66,13 +66,13 @@ class SynthesizerAgent:
         # 2. Format the analysis data for the prompt
         formatted_data = self._format_paper_data(analysis_data)
 
-        # 3. Prompt zusammenbauen
+        # 3. Build Prompt
         prompt = SYNTHESIS_PROMPT.format(
             user_query=user_query,
             paper_data=formatted_data
         )
 
-        _log(f"📝 [Synthesizer] start LLM-Synthese for {len(analysis_data)} Paper...")
+        _log(f"📝 [Synthesizer] start LLM-Synthesis for {len(analysis_data)} Paper...")
 
         try:
             # 4. Call LLM (LlamaIndex standard for Ollama calls)
@@ -81,7 +81,7 @@ class SynthesizerAgent:
             # Extract the response as a string (the .text suffix is often required in LlamaIndex)
             final_review_text = str(response)
             
-            _log("✅ [Synthesizer] Synthese successfully completed.")
+            _log("✅ [Synthesizer] Synthesis successfully completed.")
             # 5. Return a partial update for the graph state
             return {"final_review": final_review_text}
             
@@ -95,7 +95,6 @@ class SynthesizerAgent:
         """
         formatted_string = ""
         for paper in analysis_data:
-            # Nutzt die exakten Keys aus eurer Analyst-Stub-Spezifikation
             citation_id = paper.get("citation_id", "[?]")
             methodology = paper.get("methodology", "N/A")
             findings = paper.get("findings", "N/A")
