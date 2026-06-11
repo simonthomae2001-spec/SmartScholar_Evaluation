@@ -1,0 +1,30 @@
+# config.yaml
+# Single Source of Truth for SmartScholar Configuration
+
+profiles:
+  fast:
+    max_queries: 3
+    top_n_papers: 3
+    read_depth: abstract
+    chunk_size: 1024
+    max_loops: 1
+    critic_pass_threshold: 50
+    critic_top_k: 2
+
+  medium:
+    max_queries: 5
+    top_n_papers: 5
+    read_depth: hybrid
+    chunk_size: 512
+    max_loops: 2
+    critic_pass_threshold: 60
+    critic_top_k: 3
+
+  pro:
+    max_queries: 10
+    top_n_papers: 10
+    read_depth: full_pdf
+    chunk_size: 256
+    max_loops: 3
+    critic_pass_threshold: 70
+    critic_top_k: 5
