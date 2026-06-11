@@ -36,7 +36,6 @@ from src.core.orchestrator import (
     stream_enhance_flow,
     stream_search_flow,
     stream_analysis_flow,
-    stream_synthesis_flow
 )
 
 # ------------------------------------------------------------------ #
@@ -732,7 +731,7 @@ elif st.session_state.workflow_step == "ingesting":
         st.write(st.session_state.current_query)
 
     with st.status(
-            "🧠 Agent Pipeline (Ingestion & Analysis)…", expanded=True
+            "🧠 Agent Pipeline (Ingestion, Analyse & Synthese)…", expanded=True
     ) as status:
         trace = list(st.session_state.trace_steps)
 
@@ -751,37 +750,12 @@ elif st.session_state.workflow_step == "ingesting":
                 _log_i(event)
             elif isinstance(event, dict):
                 gs = event
-            # Run the remaining flow (analyst -> critic -> synthesizer)
-            # The remaining nodes will be triggered via stream_analysis_flow
-            # Wait, the stream_analysis_flow only runs analyst. We should run
-            # the full remaining pipeline, but the user said "Replace analyst direct call with stream_analysis_flow loop".
-            # Wait, to stream the remaining flow, I should create a status container and stream it.
-
-            with st.status("🧠 Agent Pipeline (Analyse & Synthese)…", expanded=True) as status:
-
-                # Teil 1: Der Analyse-Graph läuft (Analyst & Critic)
-                st.write("**Phase 1: Analysiere ausgewählte Paper...**")
-                for event in stream_analysis_flow(gs):
-                    if isinstance(event, str):
-                        st.write(event)
-                    elif isinstance(event, dict):
-                        gs = event  # State aktualisieren
-
-                # Teil 2: DEIN NEUER Synthesizer-Graph läuft
-                st.write("**Phase 2: Schreibe Literature Review...**")
-                for event in stream_synthesis_flow(gs):
-                    if isinstance(event, str):
-                        st.write(event)
-                    elif isinstance(event, dict):
-                        gs = event  # State final aktualisieren (inkl. final_review)
-
-                status.update(label="Analyse & Synthese abgeschlossen!", state="complete")
 
         st.session_state.graph_state = gs
         st.session_state.trace_steps = trace
 
         status.update(
-            label="Ingestion & Analysis Complete",
+            label="Pipeline Completed!",
             state="complete",
             expanded=False,
         )
@@ -843,21 +817,19 @@ elif st.session_state.workflow_step == "done":
             st.markdown("---")
             st.markdown(f"{abstract}")
 
-    # Analyst stub output
+    # Final Review Output
     if review:
         st.markdown("---")
-        with st.expander("📝 Analyst Output (Stub)", expanded=True):
-            st.markdown(review)
+        st.markdown("### 📝 Final Literature Review")
+        st.markdown(review)
 
-    # Download final state as JSON
+    # Download final review as Markdown
     st.markdown("---")
-    import json
-
     today = datetime.now().strftime("%Y-%m-%d")
-    state_json = json.dumps(gs, indent=2, ensure_ascii=False, default=str)
+    review_text = gs.get("final_review", "") or "No review generated."
     st.download_button(
-        label="📥 Download Research State (.json)",
-        data=state_json,
-        file_name=f"smartscholar_state_{today}.json",
-        mime="application/json",
+        label="📥 Download Literature Review (.md)",
+        data=review_text,
+        file_name=f"smartscholar_review_{today}.md",
+        mime="text/markdown",
     )

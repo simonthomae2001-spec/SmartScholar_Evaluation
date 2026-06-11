@@ -318,15 +318,18 @@ def synthesizer_node(state: GraphState, config: RunnableConfig) -> dict:
     Übergibt die verifizierten Analysedaten vollautomatisch an den
     echten SynthesizerAgent, der nun die finale Review generiert.
     """
-    _ui_log(config, "📝 [System] Starte die finale Text-Synthese aus echten Daten...")
+    def _agent_cb(msg: str):
+        _ui_log(config, msg)
+
+    _agent_cb("📝 [System] Starte die finale Text-Synthese aus echten Daten...")
 
     # 1. Instanz des echten Agenten holen (wird über das Singleton oben gelöst)
     agent = _get_synthesizer()
 
     # 2. Den Agenten mit dem aktuellen Zustand (inkl. der echten 'paper_analysis_data') aufrufen
-    agent_output = agent.synthesize_review(state, config)
+    agent_output = agent.synthesize_review(state, config, status_callback=_agent_cb)
 
-    _ui_log(config, "✅ [System] Text-Synthese erfolgreich abgeschlossen.")
+    _agent_cb("✅ [System] Text-Synthese erfolgreich abgeschlossen.")
 
     # 3. Das Ergebnis (enthält den Key 'final_review') an den Graphen zurückgeben
     return agent_output
@@ -349,7 +352,7 @@ def _route_after_critic(state: GraphState) -> str:
 
     Uses ``config["max_loops"]`` from the profile — no hardcoded limit.
     """
-    passed = state.get("_critic_passed", True)
+    passed = state.get("_critic_passed", False)
     if passed:
         return "synthesizer_node"
 

@@ -1,5 +1,6 @@
 from src.core.model_factory import ModelFactory
 import logging
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -44,17 +45,22 @@ class SynthesizerAgent:
         self.llm = ModelFactory.get_model()
         logger.info("SynthesizerAgent initialisiert.")
 
-    def synthesize_review(self, state: dict, config: dict) -> dict:
+    def synthesize_review(self, state: dict, config: dict, status_callback: Callable[[str], None] | None = None) -> dict:
         """
         Generiert die finale Literature Review aus den strukturierten Analyse-Daten.
         """
+        def _log(msg: str):
+            if status_callback:
+                status_callback(msg)
+            logger.info(msg)
+
         # 1. Daten aus dem GraphState extrahieren
         user_query = state.get("user_query", "")
         analysis_data = state.get("paper_analysis_data", [])
 
         # Fallback, falls keine Daten ankommen
         if not analysis_data:
-            logger.warning("Keine Analyse-Daten im State gefunden. Breche Synthese ab.")
+            _log("⚠️ [Synthesizer] Keine Analyse-Daten im State gefunden. Breche Synthese ab.")
             return {"final_review": "Fehler: Es wurden keine analysierten Paper für die Synthese gefunden."}
 
         # 2. Analyse-Daten für den Prompt formatieren
@@ -66,7 +72,7 @@ class SynthesizerAgent:
             paper_data=formatted_data
         )
 
-        logger.info(f"Starte LLM-Synthese für {len(analysis_data)} Paper...")
+        _log(f"📝 [Synthesizer] Starte LLM-Synthese für {len(analysis_data)} Paper...")
 
         try:
             # 4. LLM aufrufen (LlamaIndex-Standard für Ollama-Aufrufe)
@@ -75,11 +81,12 @@ class SynthesizerAgent:
             # Die Antwort als String extrahieren (.text ist bei LlamaIndex oft nötig)
             final_review_text = str(response)
             
+            _log("✅ [Synthesizer] Synthese erfolgreich abgeschlossen.")
             # 5. Partial Update für den GraphState zurückgeben
             return {"final_review": final_review_text}
             
         except Exception as e:
-            logger.error(f"Fehler bei der LLM-Generierung im Synthesizer: {e}")
+            _log(f"❌ [Synthesizer] Fehler bei der Generierung der Review: {str(e)}")
             return {"final_review": f"Fehler bei der Generierung der Review: {str(e)}"}
 
     def _format_paper_data(self, analysis_data: list[dict]) -> str:
@@ -103,49 +110,4 @@ class SynthesizerAgent:
             formatted_string += "-" * 40 + "\n\n"
             
         return formatted_string
-
-if __name__ == "__main__":
-    # --- PROVISORISCHER LOKALER TEST ---
-
-    # 1. Wir definieren unseren Mock-GraphState
-    mock_graph_state = {
-        "user_query": "Impact of Agentic RAG pipelines on the efficiency and accuracy of scientific literature reviews",
-        "config_profile": "medium",
-        "paper_analysis_data": [
-            {
-                "citation_id": "[1]",
-                "methodology": "Comparative study evaluating Agentic RAG pipelines against traditional keyword search across 500 scientific papers using Llama-3.",
-                "findings": "Agentic RAG reduced manual curation time by 40% and improved thematic relevance scores by 25%. Multi-agent loops with a 'Critic' node caught 80% more factual inconsistencies.",
-                "limitations": "The study only evaluated open-source LLMs and limited vector stores (ChromaDB), ignoring proprietary models like GPT-4.",
-                "user_relevance": "Highly relevant. Directly quantifies the efficiency and accuracy improvements of Agentic RAG asked in the query."
-            },
-            {
-                "citation_id": "[2]",
-                "methodology": "Systematic review of human-in-the-loop (HITL) breakpoints in multi-agent research systems.",
-                "findings": "Incorporating HITL breakpoints between query expansion and paper selection increased user trust by 60% and prevented LLM topic drift in 90% of edge cases.",
-                "limitations": "Small sample size of human evaluators (n=15). Did not measure raw time-to-completion.",
-                "user_relevance": "Relevant context. Shows that while accuracy increases, human breakpoints might impact total automation efficiency."
-            },
-            {
-                "citation_id": "[3]",
-                "methodology": "Benchmarking study on chunking strategies (abstract vs. full-text) in scientific RAG applications.",
-                "findings": "Full-text chunking increased hallucination rates by 12% compared to hybrid abstract-first approaches, due to noise in methodology sections. Abstract-only search was fastest but missed key limitations.",
-                "limitations": "Did not test semantic chunking, only static character-limit chunking (512 vs 1024 chars).",
-                "user_relevance": "Moderately relevant. Explains underlying mechanics of why Agentic RAG might struggle with accuracy depending on ingestion depth."
-            }
-        ]
-    }
-
-    # 2. Agent instanziieren (holt sich Llama3 über eure Factory)
-    print("Starte lokalen Test des SynthesizerAgents...\n")
-    agent = SynthesizerAgent()
-
-    # 3. Synthese mit Mock-Daten anstoßen
-    print("Sende Prompt an das LLM (das kann ein paar Sekunden dauern)...\n")
-    result = agent.synthesize_review(state=mock_graph_state, config={})
-
-    # 4. Ergebnis wunderschön in die Konsole drucken
-    print("=" * 50)
-    print(" GENERIERTE LITERATURE REVIEW ")
-    print("=" * 50)
-    print(result.get("final_review", "Fehler: Kein Output generiert."))
+

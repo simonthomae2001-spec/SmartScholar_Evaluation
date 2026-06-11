@@ -62,6 +62,9 @@ class GraphState(TypedDict, total=False):
         Textual feedback from the Critic agent.
     loop_count : int
         Current critic→analyst iteration count.
+    _critic_passed : bool
+        Internal routing flag set by the Critic node.
+        ``True`` means the analysis passed verification.
     final_review : str
         The literature review / synthesis produced by the Synthesizer.
     """
@@ -83,4 +86,5 @@ class GraphState(TypedDict, total=False):
     paper_analysis_data: list[dict]
     critic_feedback: str
     loop_count: int
+    _critic_passed: bool
     final_review: str
