@@ -99,7 +99,7 @@ class GatekeeperAgent:
                 "severity": "content_issue",
                 "can_override": False,
                 "follow_up_question": None,
-                "reason": "Bitte gib eine wissenschaftliche Recherchefrage ein.",
+                "reason": "Please enter an academic research question.",
             }
 
         security_decision = self._security_critical_decision(user_input)
@@ -125,8 +125,8 @@ class GatekeeperAgent:
             "can_override": False,
             "follow_up_question": None,
             "reason": (
-                "Ich konnte die Anfrage nicht sicher bewerten. "
-                "Bitte formuliere sie als klare wissenschaftliche Recherchefrage."
+                "I was unable to assess the enquiry with certainty. "
+                "Please formulate it as a clear research question."
             ),
         }
 
@@ -194,8 +194,8 @@ class GatekeeperAgent:
             "can_override": False,
             "follow_up_question": None,
             "reason": (
-                "Diese Anfrage zielt auf interne Anweisungen, Systemkontext "
-                "oder vertrauliche Informationen ab und kann nicht ausgeführt werden."
+                "This request relates to internal instructions and the system context."
+                "or contains confidential information and cannot be executed."
             ),
         }
 
