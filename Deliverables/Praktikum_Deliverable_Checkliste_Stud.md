@@ -59,10 +59,10 @@
 
 **Ziel:** Das System tut, was es tun soll – zumindest im Standardfall.
 
-- [ ] Hauptlogik implementiert – projektspezifisch:
+- [x] Hauptlogik implementiert – projektspezifisch:
   - [ ] **Projekt A:** Vollständiger Agenten-Workflow vom Feature-Request bis zum getesteten Code
   - [ ] **Projekt B:** Spielmechanik + mind. zwei verschiedene Agenten-Typen, die gegeneinander spielen können
-  - [ ] **Projekt C:** Vollständige RAG-Pipeline: Suche → Retrieval → Synthese → strukturierter Output
+  - [x] **Projekt C:** Vollständige RAG-Pipeline: Suche → Retrieval → Synthese → strukturierter Output
   - [ ] **Projekt D:** Funktionierender Agent inkl. Tool-Zugriff, erste naive Guardrails, erste Angriffsversuche
   - [ ] **Projekt E:** Mind. drei Agenten mit Persönlichkeiten und persistentem Memory, die in mind. einem Szenario interagieren
   - [ ] **Projekt F:** Vollständiger Workflow für mind. einen Eingabe-Typ, mit klarem Input und Output
@@ -71,8 +71,8 @@
 
 **Pflicht-Deliverable Termin 3**
 
-- [ ] Lauffähige Kernfunktionalität im Repository
-- [ ] Kurzes „Lab Notebook" (Markdown-Datei im Repo) mit den Beobachtungen aus den Durchläufen
+- [x] Lauffähige Kernfunktionalität im Repository
+- [x] Kurzes „Lab Notebook" (Markdown-Datei im Repo) mit den Beobachtungen aus den Durchläufen
 
 ---
 
@@ -80,15 +80,15 @@
 
 **Ziel:** Das System überlebt ungewöhnliche Eingaben; das Innenleben ist nachvollziehbar.
 
-- [ ] **Observability** eingebaut: strukturiertes Logging aller LLM-Aufrufe (Prompt, Response, Latenz, Kosten)
-- [ ] Mind. **drei Edge Cases / Failure Modes** identifiziert (z. B. leere/absurde Eingabe, Tool-/API-Ausfall, Endlosschleife, falsches Output-Format)
-- [ ] Sinnvolle Fehlerbehandlung implementiert (bewusste Entscheidungen: wiederholen / abbrechen / an Nutzer melden)
+- [x] **Observability** eingebaut: strukturiertes Logging aller LLM-Aufrufe (Prompt, Response, Latenz, Kosten)
+- [x] Mind. **drei Edge Cases / Failure Modes** identifiziert (z. B. leere/absurde Eingabe, Tool-/API-Ausfall, Endlosschleife, falsches Output-Format)
+- [x] Sinnvolle Fehlerbehandlung implementiert (bewusste Entscheidungen: wiederholen / abbrechen / an Nutzer melden)
 - [ ] **Nur sicherheitsrelevante Projekte (D, A, F):** erste Guardrail-Schicht (Input-Filter, Output-Filter, Tool-Whitelist, Confirmation Gate für irreversible Aktionen)
 
 **Pflicht-Deliverable Termin 4**
 
-- [ ] Observability-Setup ist aktiv und produziert Logs
-- [ ] Dokumentierte Edge-Case-Liste mit je: erwartetes Verhalten / tatsächliches Verhalten / gewählter Lösungsansatz
+- [x] Observability-Setup ist aktiv und produziert Logs
+- [x] Dokumentierte Edge-Case-Liste mit je: erwartetes Verhalten / tatsächliches Verhalten / gewählter Lösungsansatz
 - [ ] Erste Version der Guardrails (sofern projekt-relevant)
 
 ---
