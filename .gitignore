@@ -239,5 +239,5 @@ __pycache__/
 .idea/
 *.iml
 
-data/chroma_db/
+chroma_db/
 *.iml
