@@ -62,6 +62,16 @@ class AnalystAgent:
         self.vector_engine:VectorEngine =None
 
     def _generate_questions(self, title:str) ->List[str]:
+        """
+        Generates a list of questions in order to extract 
+        methodology, key findings, limitations of a given paper.
+
+        Parameters
+        ----------
+        title (str) : title of the paper to examine
+
+        Returns : List[str]
+        """
         prompt_text = self.SEARCH_PROMPT.format(title=title)
         questions = structured_predicted_with_retries(
             llm= self.llm,
@@ -76,6 +86,7 @@ class AnalystAgent:
         
         return questions.questions
 
+    # TODO: Filter for duplicates
     def _query_vector_db(self, title:str, questions:List[str]) ->List[str]:
         """
         Searches the vector database with a set of questions an and returns
@@ -108,6 +119,16 @@ class AnalystAgent:
         return list(results)
     
     def _generate_record(self, query_results: List[str], orig_query:str) ->AnalysisRecord:
+        """
+        Builds an AnalysisRecord that based on the information contained in the query_results.
+
+        Parameters
+        ----------
+        query_results (str) : title of the paper to examine
+        orig_query (str) : the original user query
+
+        Returns : AnalysisRecord
+        """
         prompt = self.SUMMARY_PROMPT.format(user_query=orig_query, passages=query_results)
         record = structured_predicted_with_retries(
             llm= self.llm,
@@ -125,6 +146,16 @@ class AnalystAgent:
             
 
     def _extract_information(self, title:str, orig_query:str) ->AnalysisRecord:
+        """
+        Extracts information about metrology, key findings or limitations and relevance.
+
+        Parameters
+        ----------
+        title (str) : title of the paper to examine
+        orig_query (str) : the original user query
+
+        Returns : AnalysisRecord
+        """
         questions = self._generate_questions(title)
         self._log(f"Generated {len(questions)} questions: ")
         for idx, q in enumerate(questions):
