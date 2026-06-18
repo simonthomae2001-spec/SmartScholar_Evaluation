@@ -3,8 +3,8 @@ ingestor_agent.py — Knowledge ingestion.
 
 The Ingestor is the "librarian": for each finalised paper it ingests text
 into ChromaDB at the profile's read_depth, and attaches a LEAN reference
-(chunk_ids + ingestion_status + ingested_depth) to the paper dict. Large
-content lives ONLY in ChromaDB, never in the graph state.
+(chunk_ids + ingestion_status + ingested_depth + pdf_reason) to the paper
+dict. Large content lives ONLY in ChromaDB, never in the graph state.
 
 Implemented depths:
 - "abstract" (FAST)   — index the abstract only.
@@ -20,13 +20,24 @@ Status vocabulary (decision F — feeds observability + Termin-5 metrics):
 - "success_abstract"   : the abstract was indexed as the chosen depth (FAST).
 - "fallback_abstract"  : no usable PDF, silently fell back to the abstract.
 - "no_content"         : neither PDF nor abstract usable.
+
+Decision F — per-paper ``pdf_reason``:
+    The *reason* a PDF attempt ended the way it did (from pdf_tool), attached
+    as a short string to each paper so the trace can explain a fallback
+    ("paywall", "timeout", "not_a_pdf", "scanned_no_text", …) and so the run
+    can be measured (PDF-coverage baseline). FAST papers, where no PDF is ever
+    attempted, get ``"not_attempted"``.
 """
 from __future__ import annotations
 
+from collections import Counter
 from typing import Callable, Tuple
 
 from src.core.vector_store import VectorEngine
-from src.tools.pdf_tool import fetch_pdf_text
+from src.tools.pdf_tool import fetch_pdf_text, REASON_OK
+
+# Marker for papers whose depth never triggers a PDF attempt (FAST / unknown).
+_REASON_NOT_ATTEMPTED = "not_attempted"
 
 
 class IngestorAgent:
@@ -49,7 +60,8 @@ class IngestorAgent:
         Ingest all papers into a fresh ChromaDB collection.
 
         Returns the same papers, each augmented with ``citation_id``,
-        ``chunk_ids``, ``ingestion_status``, and ``ingested_depth``.
+        ``chunk_ids``, ``ingestion_status``, ``ingested_depth`` and
+        ``pdf_reason`` (decision F).
         """
         read_depth = config["read_depth"]
         chunk_size = config["chunk_size"]
@@ -75,12 +87,13 @@ class IngestorAgent:
                 chunk_ids, status, depth = self._ingest_abstract(
                     paper, citation_id, chunk_size, intended=True
                 )
+                pdf_reason = _REASON_NOT_ATTEMPTED
             elif read_depth == "hybrid":
-                chunk_ids, status, depth = self._ingest_hybrid(
+                chunk_ids, status, depth, pdf_reason = self._ingest_hybrid(
                     paper, citation_id, chunk_size, _log
                 )
             elif read_depth == "full_pdf":
-                chunk_ids, status, depth = self._ingest_full_pdf(
+                chunk_ids, status, depth, pdf_reason = self._ingest_full_pdf(
                     paper, citation_id, chunk_size, _log
                 )
             else:
@@ -88,16 +101,25 @@ class IngestorAgent:
                 chunk_ids, status, depth = self._ingest_abstract(
                     paper, citation_id, chunk_size, intended=True
                 )
+                pdf_reason = _REASON_NOT_ATTEMPTED
 
             # Attach the lean reference — NOT the text itself.
             paper["chunk_ids"] = chunk_ids
             paper["ingestion_status"] = status
             paper["ingested_depth"] = depth
+            paper["pdf_reason"] = pdf_reason  # decision F — metric + trace
 
             _log(
                 f"   ↳ {citation_id}: {status} "
                 f"({len(chunk_ids)} chunks, depth={depth})"
             )
+
+        # Decision F — reason distribution for this run (baseline metric).
+        # This single line is the "before" number for the Termin-5 experiment:
+        # how the PDF-resolver extension (arXiv / OpenAlex) shifts the mix.
+        dist = Counter(p.get("pdf_reason", _REASON_NOT_ATTEMPTED) for p in papers)
+        summary = ", ".join(f"{reason}={n}" for reason, n in dist.most_common())
+        _log(f"📊 [Ingestor] PDF-Reasons: {summary}")
 
         _log(f"✅ [Ingestor] Done — {len(papers)} papers ingested.")
         return papers, self.vector_engine
@@ -146,13 +168,14 @@ class IngestorAgent:
             citation_id: str,
             chunk_size: int,
             log: Callable[[str], None],
-    ) -> tuple[list[str], str, str]:
+    ) -> tuple[list[str], str, str, str]:
         """
         Try the open-access PDF. On success, index abstract + PDF body text
         together (coarse, no page metadata). On any failure (no link,
-        paywall, parse error), silently fall back to abstract-only.
+        paywall, parse error), surface the reason and silently fall back to
+        abstract-only.
 
-        Returns ``(chunk_ids, ingestion_status, depth)``.
+        Returns ``(chunk_ids, ingestion_status, depth, pdf_reason)``.
         """
         url = paper.get("openAccessPdf")
         paper_id = paper.get("paperId") or citation_id
@@ -175,12 +198,17 @@ class IngestorAgent:
                 metadata=self._meta(paper),
             )
             if chunk_ids:
-                return (chunk_ids, "success_pdf", "hybrid")
+                return (chunk_ids, "success_pdf", "hybrid", REASON_OK)
 
-        # Silent per-paper fallback to abstract-only.
-        return self._ingest_abstract(
+        # No usable PDF → surface WHY, then silent fallback to abstract-only.
+        log(
+            f"   ⚠️ {citation_id} kein PDF ({pdf_result.reason}) "
+            f"→ Abstract-Fallback"
+        )
+        chunk_ids, status, depth = self._ingest_abstract(
             paper, citation_id, chunk_size, intended=False
         )
+        return (chunk_ids, status, depth, pdf_result.reason)
 
     # ------------------------------------------------------------------ #
     #  Depth: full_pdf (PRO) — page-aware, fine chunks, page metadata
@@ -191,13 +219,13 @@ class IngestorAgent:
             citation_id: str,
             chunk_size: int,
             log: Callable[[str], None],
-    ) -> tuple[list[str], str, str]:
+    ) -> tuple[list[str], str, str, str]:
         """
         PRO: download the full PDF and index it page-by-page, so every chunk
         carries its page number (fine-grained reference for the Critic).
-        Silent per-paper fallback to abstract-only if no usable PDF.
+        On failure, surface the reason and silently fall back to abstract-only.
 
-        Returns ``(chunk_ids, ingestion_status, depth)``.
+        Returns ``(chunk_ids, ingestion_status, depth, pdf_reason)``.
         """
         url = paper.get("openAccessPdf")
         paper_id = paper.get("paperId") or citation_id
@@ -215,12 +243,17 @@ class IngestorAgent:
                 metadata=self._meta(paper),
             )
             if chunk_ids:
-                return (chunk_ids, "success_pdf", "full_pdf")
+                return (chunk_ids, "success_pdf", "full_pdf", REASON_OK)
 
-        # Silent per-paper fallback to abstract-only.
-        return self._ingest_abstract(
+        # No usable PDF → surface WHY, then silent fallback to abstract-only.
+        log(
+            f"   ⚠️ {citation_id} kein PDF ({pdf_result.reason}) "
+            f"→ Abstract-Fallback"
+        )
+        chunk_ids, status, depth = self._ingest_abstract(
             paper, citation_id, chunk_size, intended=False
         )
+        return (chunk_ids, status, depth, pdf_result.reason)
 
     # ------------------------------------------------------------------ #
     #  Helpers
