@@ -20,7 +20,7 @@ import streamlit.components.v1 as components
 import sys
 import os
 from datetime import datetime
-from src.core.vector_store import clear_collection
+import json
 
 # ------------------------------------------------------------------ #
 #  Path setup
