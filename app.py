@@ -20,6 +20,7 @@ import streamlit.components.v1 as components
 import sys
 import os
 from datetime import datetime
+import json
 
 # ------------------------------------------------------------------ #
 #  Path setup
@@ -320,6 +321,38 @@ def _inject_scroll_hack():
     """)
 
 
+def append_to_evaluation_logs(final_state: dict, filepath: str = "data/experiment_baseline_logs.json"):
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+    cleaned_papers = []
+    for paper in final_state.get("active_papers", []):
+        cleaned_papers.append({
+            "title": str(paper.get("title", "")),
+            "abstract": str(paper.get("abstract", "")),
+            "ingested_content": str(paper.get("ingested_content", ""))
+        })
+
+    serializable_state = {
+        "user_query": str(final_state.get("user_query", "")),
+        "final_review": str(final_state.get("final_review", "")),
+        "active_papers": cleaned_papers
+    }
+
+    existing_logs = []
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                existing_logs = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            existing_logs = []
+
+    existing_logs.append(serializable_state)
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(existing_logs, f, indent=4, ensure_ascii=False)
+    print(f"Formatted data successfully and logged here: {filepath}")
+
+
 # ------------------------------------------------------------------ #
 #  Sidebar
 # ------------------------------------------------------------------ #
@@ -404,7 +437,7 @@ if st.session_state.workflow_step == "idle":
     if st.session_state.gatekeeper_error:
         if st.session_state.gatekeeper_pending_query:
             st.warning(st.session_state.gatekeeper_error)
-            if st.button("Als Research-Task bestätigen", type="primary"):
+            if st.button("Affirm as research task", type="primary"):
                 _confirm_pending_gatekeeper_query()
                 st.rerun()
         else:
@@ -779,6 +812,10 @@ elif st.session_state.workflow_step == "done":
                 st.write(step)
 
     gs = st.session_state.graph_state
+
+    # Save Graph State in json for Evaluation
+    append_to_evaluation_logs(gs)
+
     active = gs.get("active_papers", [])
     review = gs.get("final_review", "")
 
