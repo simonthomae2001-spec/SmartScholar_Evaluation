@@ -1,8 +1,19 @@
 import os
+import time
 import requests
 
 
 class ScholarTool:
+    _SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
+    # externalIds added so the Ingestor's PDF resolver can use the
+    # deterministic arXiv-ID / DOI paths (arXiv + Unpaywall) instead of
+    # relying solely on Semantic Scholar's (often missing) openAccessPdf.
+    _FIELDS = (
+        "title,abstract,authors,year,openAccessPdf,url,citationCount,externalIds"
+    )
+    _TIMEOUT = 30
+    _MAX_RETRIES = 5
+
     @staticmethod
     def _get_api_key() -> str:
         """Reads the API key from the data directory."""
@@ -13,42 +24,95 @@ class ScholarTool:
                 return f.read().strip()
         return None
 
+    # ------------------------------------------------------------------ #
+    #  HTTP with exponential backoff on 429 / 5xx
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _get_with_backoff(params: dict, headers: dict) -> requests.Response:
+        """
+        GET the search endpoint, retrying on 429 (rate limit) and 5xx with
+        exponential backoff. Semantic Scholar explicitly requires backoff;
+        the unauthenticated rate limit is a pool SHARED across all anonymous
+        users, so a 429 can occur even when our own traffic is light.
+
+        Honours a numeric ``Retry-After`` header when present, otherwise
+        backs off 1 → 2 → 4 → 8 → 16s (capped at 30s).
+        """
+        delay = 1.0
+        resp = None
+        for attempt in range(ScholarTool._MAX_RETRIES):
+            try:
+                resp = requests.get(
+                    ScholarTool._SEARCH_URL,
+                    params=params,
+                    headers=headers,
+                    timeout=ScholarTool._TIMEOUT,
+                )
+            except requests.RequestException as e:
+                # Transient network error → back off and retry.
+                print(f"[ScholarTool] network error ({e}) — retry in {delay:.0f}s "
+                      f"({attempt + 1}/{ScholarTool._MAX_RETRIES})")
+                time.sleep(delay)
+                delay = min(delay * 2, 30)
+                continue
+
+            if resp.status_code == 429 or resp.status_code >= 500:
+                retry_after = resp.headers.get("Retry-After", "")
+                wait = float(retry_after) if retry_after.isdigit() else delay
+                print(f"[ScholarTool] HTTP {resp.status_code} — backing off "
+                      f"{wait:.0f}s ({attempt + 1}/{ScholarTool._MAX_RETRIES})")
+                time.sleep(wait)
+                delay = min(delay * 2, 30)
+                continue
+
+            # Any other status: let the caller's error handling decide.
+            resp.raise_for_status()
+            return resp
+
+        # Retries exhausted — surface the last response's error (or raise).
+        if resp is not None:
+            resp.raise_for_status()
+        raise requests.RequestException("Semantic Scholar: retries exhausted")
+
     @staticmethod
     def search_papers(query: str, limit: int = 5) -> list:
-
         """
         Searches for papers using the Semantic Scholar API.
         Returns a list of dictionaries containing paper details.
         """
-        url = "https://api.semanticscholar.org/graph/v1/paper/search"
         params = {
             "query": query,
             "limit": limit,
-            "fields": "title,abstract,authors,year,openAccessPdf,url,citationCount"
+            "fields": ScholarTool._FIELDS,
         }
-        
+
         headers = {}
         api_key = ScholarTool._get_api_key()
         if api_key:
             headers["x-api-key"] = api_key
-            
+
         try:
-            response = requests.get(url, params=params, headers=headers)
-            response.raise_for_status()
+            response = ScholarTool._get_with_backoff(params, headers)
             data = response.json()
 
-            
             papers = []
             for item in data.get("data", []):
                 # Extract author names
                 authors = [author.get("name") for author in item.get("authors", []) if author.get("name")]
-                
+
                 # Extract PDF URL if available
                 pdf_url = None
                 open_access_pdf = item.get("openAccessPdf")
                 if open_access_pdf and isinstance(open_access_pdf, dict):
                     pdf_url = open_access_pdf.get("url")
-                
+
+                # Extract arXiv ID and DOI from externalIds for the PDF resolver.
+                # externalIds looks like {"ArXiv": "1706.03762", "DOI": "10.…", …};
+                # keys may be absent, so default to None.
+                external_ids = item.get("externalIds") or {}
+                arxiv_id = external_ids.get("ArXiv")
+                doi = external_ids.get("DOI")
+
                 papers.append({
                     "paperId": item.get("paperId"),
                     "title": item.get("title"),
@@ -57,6 +121,8 @@ class ScholarTool:
                     "year": item.get("year"),
                     "citationCount": item.get("citationCount", 0),
                     "openAccessPdf": pdf_url,
+                    "arxiv_id": arxiv_id,
+                    "doi": doi,
                     "url": item.get("url")
                 })
             return papers
