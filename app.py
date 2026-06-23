@@ -20,6 +20,7 @@ import streamlit.components.v1 as components
 import sys
 import os
 from datetime import datetime
+from src.core.vector_store import clear_collection
 
 # ------------------------------------------------------------------ #
 #  Path setup
@@ -37,6 +38,8 @@ from src.core.orchestrator import (
     stream_search_flow,
     stream_analysis_flow,
 )
+
+from src.core.vector_store import clear_collection
 
 # ------------------------------------------------------------------ #
 #  Page configuration
@@ -165,6 +168,11 @@ _DEFAULTS = {
 for key, default in _DEFAULTS.items():
     if key not in st.session_state:
         st.session_state[key] = default
+
+# Clear stale ChromaDB data once per session, so the first run starts clean.
+if "_kb_cleared" not in st.session_state:
+    clear_collection()
+    st.session_state["_kb_cleared"] = True
 
 
 # ------------------------------------------------------------------ #
@@ -363,6 +371,7 @@ st.sidebar.markdown(
 if st.session_state.workflow_step != "idle":
     st.sidebar.markdown("---")
     if st.sidebar.button("🔄 Start Over", use_container_width=True):
+        clear_collection()
         _reset_workflow()
         st.rerun()
 

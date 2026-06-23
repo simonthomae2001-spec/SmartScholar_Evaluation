@@ -95,12 +95,14 @@ class IngestorAgent:
             if status_callback:
                 status_callback(msg)
 
-        # Fresh collection for exactly this run (decision 0.C).
+        # The knowledge base is cleared by the UI (session start / "Start
+        # Over"); here we only re-bind to the current collection — cheap, no
+        # model reload — and ingest into it.
         _log(
-            f"🗄️ [Ingestor] Resetting knowledge base — "
+            f"🗄️ [Ingestor] Ingesting — "
             f"full text for top {quota} of {len(papers)} papers…"
         )
-        self.vector_engine.reset_collection()
+        self.vector_engine.rebind()
 
         for idx, paper in enumerate(papers, start=1):
             citation_id = paper.get("citation_id") or f"[{idx}]"

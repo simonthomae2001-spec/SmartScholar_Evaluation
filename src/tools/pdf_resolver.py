@@ -105,6 +105,7 @@ def resolve_pdf_candidates(
     paper: dict,
     *,
     unpaywall_email: str | None = None,
+    log=None,
 ) -> list[PdfCandidate]:
     """
     Build the ordered list of candidate PDF URLs for a paper (no download).
@@ -112,33 +113,62 @@ def resolve_pdf_candidates(
     Reads ``openAccessPdf`` (SS), ``arxiv_id`` + ``title`` (arXiv), and
     ``doi`` (Unpaywall) from the paper dict. Duplicates (same URL from two
     sources) are removed while preserving priority order.
+
+    ``log`` (optional) makes the whole discovery phase visible in the trace:
+    which IDs the paper carries, whether the arXiv title search ran and what
+    it found, and whether Unpaywall was queried — so a silent "nothing found"
+    is no longer indistinguishable from "never tried".
     """
+    def _log(msg: str) -> None:
+        if log:
+            log(msg)
+
     candidates: list[PdfCandidate] = []
 
-    # 1. Semantic Scholar open-access PDF (cheap — already in the metadata).
+    arxiv_id = paper.get("arxiv_id")
+    doi = paper.get("doi")
     ss_url = paper.get("openAccessPdf")
+
+    _log(
+        f"      🔎 IDs: arxiv={arxiv_id or '–'}, doi={doi or '–'}, "
+        f"ss_pdf={'yes' if ss_url else 'no'}"
+    )
+
+    # 1. Semantic Scholar open-access PDF (cheap — already in the metadata).
     if ss_url:
         candidates.append(PdfCandidate(SOURCE_SEMANTIC_SCHOLAR, ss_url))
 
     # 2. arXiv — deterministic by ID, else a guarded title search.
-    arxiv_id = paper.get("arxiv_id")
     if arxiv_id:
         candidates.append(
             PdfCandidate(SOURCE_ARXIV_ID, _arxiv_url_from_id(arxiv_id))
         )
     else:
-        title_url = _arxiv_search_by_title(paper.get("title"))
-        if title_url:
-            candidates.append(PdfCandidate(SOURCE_ARXIV_TITLE, title_url))
+        title = paper.get("title")
+        if title:
+            _log("      🔎 arXiv title search…")
+            title_url = _arxiv_search_by_title(title)
+            if title_url:
+                candidates.append(PdfCandidate(SOURCE_ARXIV_TITLE, title_url))
+                _log("      ✓ arXiv: title match accepted")
+            else:
+                _log("      ✗ arXiv: no confident title match")
 
     # 3. Unpaywall — by DOI.
-    doi = paper.get("doi")
     if doi:
         email = unpaywall_email or _get_unpaywall_email()
-        if email:
+        if not email:
+            _log("      ⚠ Unpaywall skipped (no contact e-mail configured)")
+        else:
+            _log("      🔎 Unpaywall (DOI lookup)…")
             uw_url = _unpaywall_pdf_url(doi, email)
             if uw_url:
                 candidates.append(PdfCandidate(SOURCE_UNPAYWALL, uw_url))
+                _log("      ✓ Unpaywall: OA PDF found")
+            else:
+                _log("      ✗ Unpaywall: no OA PDF for this DOI")
+    else:
+        _log("      ⚠ Unpaywall skipped (no DOI on this paper)")
 
     return _dedupe_by_url(candidates)
 
@@ -162,27 +192,63 @@ def fetch_pdf_with_fallback(
         if log:
             log(msg)
 
-    candidates = resolve_pdf_candidates(paper, unpaywall_email=unpaywall_email)
+    arxiv_id = paper.get("arxiv_id")
+    doi = paper.get("doi")
+    ss_url = paper.get("openAccessPdf")
+    title = paper.get("title")
+    email = unpaywall_email or _get_unpaywall_email()
 
-    if not candidates:
-        # Nothing to try at all (no SS link, no arXiv, no DOI/OA copy).
-        return FetchOutcome(
-            result=PdfExtractionResult(reason=REASON_NO_URL),
-            source=None,
-            attempts=[],
-        )
+    _log(
+        f"      🔎 IDs: arxiv={arxiv_id or '–'}, doi={doi or '–'}, "
+        f"ss_pdf={'yes' if ss_url else 'no'}"
+    )
+
+    # Ordered chain — Semantic Scholar → arXiv → Unpaywall. Each URL is
+    # resolved LAZILY (only when reached), so the trace shows every source that
+    # was actually consulted AND we stop hitting the arXiv / Unpaywall APIs as
+    # soon as one source delivers a usable PDF.
+    def _resolve_arxiv() -> str | None:
+        if arxiv_id:
+            return _arxiv_url_from_id(arxiv_id)
+        if title:
+            _log("      🔎 arXiv title search…")
+            return _arxiv_search_by_title(title)
+        return None
+
+    def _resolve_unpaywall() -> str | None:
+        if not doi:
+            return None
+        if not email:
+            _log("      ⚠ Unpaywall: no contact e-mail configured")
+            return None
+        _log("      🔎 Unpaywall DOI lookup…")
+        return _unpaywall_pdf_url(doi, email)
+
+    chain = [
+        (SOURCE_SEMANTIC_SCHOLAR, lambda: ss_url),
+        (SOURCE_ARXIV_ID if arxiv_id else SOURCE_ARXIV_TITLE, _resolve_arxiv),
+        (SOURCE_UNPAYWALL, _resolve_unpaywall),
+    ]
 
     attempts: list[tuple[str, str]] = []
     last_result = PdfExtractionResult(reason=REASON_NO_URL)
 
-    for cand in candidates:
-        _log(f"      → trying {cand.source}…")
-        cache_key = f"{paper_id}__{cand.source}"
-        res = fetch_pdf_text(cand.url, cache_key)
-        attempts.append((cand.source, res.reason))
+    for label, resolve in chain:
+        url = resolve()
+        if not url:
+            _log(f"      ✗ {label}: no URL")
+            attempts.append((label, REASON_NO_URL))
+            continue
+
+        _log(f"      → {label}: downloading…")
+        res = fetch_pdf_text(url, f"{paper_id}__{label}")
+        attempts.append((label, res.reason))
 
         if res.has_content:
-            return FetchOutcome(result=res, source=cand.source, attempts=attempts)
+            _log(f"      ✓ {label}: PDF ok")
+            return FetchOutcome(result=res, source=label, attempts=attempts)
+
+        _log(f"      ✗ {label}: {res.reason}")
         last_result = res
 
     return FetchOutcome(result=last_result, source=None, attempts=attempts)
