@@ -328,6 +328,40 @@ def _inject_scroll_hack():
     """)
 
 
+def append_to_evaluation_logs(final_state: dict, filepath: str = "data/experiment_baseline_logs.json"):
+    """
+    Extracts readable text data and writes it into a json file
+    """
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+    cleaned_papers = []
+    for paper in final_state.get("active_papers", []):
+        cleaned_papers.append({
+            "title": str(paper.get("title", "")),
+            "abstract": str(paper.get("abstract", "")),
+            "ingested_content": str(paper.get("ingested_content", ""))
+        })
+
+    serializable_state = {
+        "user_query": str(final_state.get("user_query", "")),
+        "final_review": str(final_state.get("final_review", "")),
+        "active_papers": cleaned_papers
+    }
+
+    existing_logs = []
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                existing_logs = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            existing_logs = []
+
+    existing_logs.append(serializable_state)
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(existing_logs, f, indent=4, ensure_ascii=False)
+    print(f"Erfolgreich bereinigte Daten in {filepath} geloggt!")
+
 # ------------------------------------------------------------------ #
 #  Sidebar
 # ------------------------------------------------------------------ #
@@ -790,6 +824,9 @@ elif st.session_state.workflow_step == "done":
     gs = st.session_state.graph_state
     active = gs.get("active_papers", [])
     review = gs.get("final_review", "")
+
+    # Log Graphstate
+    append_to_evaluation_logs(gs)
 
     st.markdown("### ✅ Research Finalised")
     st.success(
