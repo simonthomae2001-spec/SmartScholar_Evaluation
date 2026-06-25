@@ -240,4 +240,6 @@ __pycache__/
 *.iml
 
 data/chroma_db/
+chroma_db/
+pdf_cache/
 *.iml

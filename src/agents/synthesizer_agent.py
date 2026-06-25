@@ -4,7 +4,7 @@ from typing import Callable
 
 logger = logging.getLogger(__name__)
 
-# Der System-Prompt als Konstante (auf Englisch für bessere LLM-Performance)
+# System-Prompt as a constant
 SYNTHESIS_PROMPT = """You are an expert academic researcher and highly skilled technical writer. 
 Your task is to synthesize a comprehensive, critical literature review based EXCLUSIVELY on the provided extracted paper data.
 
@@ -41,61 +41,60 @@ List the citation IDs and a one-sentence summary of their contribution based on 
 
 class SynthesizerAgent:
     def __init__(self):
-        # Initialisiert das LLM über die zentrale Factory, genau wie der ResearcherAgent
+        # Initializes LLM via the central ModelFactory
         self.llm = ModelFactory.get_model()
         logger.info("SynthesizerAgent initialisiert.")
 
     def synthesize_review(self, state: dict, config: dict, status_callback: Callable[[str], None] | None = None) -> dict:
         """
-        Generiert die finale Literature Review aus den strukturierten Analyse-Daten.
+        Generates the final literature review based on the structured analysis data.
         """
         def _log(msg: str):
             if status_callback:
                 status_callback(msg)
             logger.info(msg)
 
-        # 1. Daten aus dem GraphState extrahieren
+        # 1. Extracting data from GraphState
         user_query = state.get("user_query", "")
         analysis_data = state.get("paper_analysis_data", [])
 
-        # Fallback, falls keine Daten ankommen
+        # Fallback if no data is received
         if not analysis_data:
-            _log("⚠️ [Synthesizer] Keine Analyse-Daten im State gefunden. Breche Synthese ab.")
-            return {"final_review": "Fehler: Es wurden keine analysierten Paper für die Synthese gefunden."}
+            _log("⚠️ [Synthesizer] No analysis data found in the state. Aborting synthesis.")
+            return {"final_review": "Error: No analysed papers were found for the synthesis."}
 
-        # 2. Analyse-Daten für den Prompt formatieren
+        # 2. Format the analysis data for the prompt
         formatted_data = self._format_paper_data(analysis_data)
 
-        # 3. Prompt zusammenbauen
+        # 3. Build Prompt
         prompt = SYNTHESIS_PROMPT.format(
             user_query=user_query,
             paper_data=formatted_data
         )
 
-        _log(f"📝 [Synthesizer] Starte LLM-Synthese für {len(analysis_data)} Paper...")
+        _log(f"📝 [Synthesizer] start LLM-Synthesis for {len(analysis_data)} Paper...")
 
         try:
-            # 4. LLM aufrufen (LlamaIndex-Standard für Ollama-Aufrufe)
+            # 4. Call LLM (LlamaIndex standard for Ollama calls)
             response = self.llm.complete(prompt)
             
-            # Die Antwort als String extrahieren (.text ist bei LlamaIndex oft nötig)
+            # Extract the response as a string (the .text suffix is often required in LlamaIndex)
             final_review_text = str(response)
             
-            _log("✅ [Synthesizer] Synthese erfolgreich abgeschlossen.")
-            # 5. Partial Update für den GraphState zurückgeben
+            _log("✅ [Synthesizer] Synthesis successfully completed.")
+            # 5. Return a partial update for the graph state
             return {"final_review": final_review_text}
             
         except Exception as e:
-            _log(f"❌ [Synthesizer] Fehler bei der Generierung der Review: {str(e)}")
-            return {"final_review": f"Fehler bei der Generierung der Review: {str(e)}"}
+            _log(f"❌ [Synthesizer] Error during review generation: {str(e)}")
+            return {"final_review": f"Error during review generation: {str(e)}"}
 
     def _format_paper_data(self, analysis_data: list[dict]) -> str:
         """
-        Hilfsmethode, um die Liste der Dictionaries in einen sauberen Text-Block zu verwandeln.
+        A method for converting the list of dictionaries into a clean block of text.
         """
         formatted_string = ""
         for paper in analysis_data:
-            # Nutzt die exakten Keys aus eurer Analyst-Stub-Spezifikation
             citation_id = paper.get("citation_id", "[?]")
             methodology = paper.get("methodology", "N/A")
             findings = paper.get("findings", "N/A")
@@ -110,4 +109,4 @@ class SynthesizerAgent:
             formatted_string += "-" * 40 + "\n\n"
             
         return formatted_string
-
+
