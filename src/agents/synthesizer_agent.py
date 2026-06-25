@@ -20,6 +20,11 @@ INSTRUCTIONS & CONSTRAINTS:
 3. INLINE CITATIONS: Every claim, finding, or methodology mentioned must be cited immediately using the provided citation IDs (e.g., "Recent studies show X [1][3].").
 4. LANGUAGE: Write the review in the language of the RESEARCH TOPIC. If the topic is German, write in German. If English, write in English.
 
+ADDITIONAL GENERATION CONSTRAINTS:
+1. Elaboration: Do not just list or summarize the findings. For each thematic section, provide a deep synthesis, explaining *how* the methodologies achieved their results and *why* certain limitations occurred.
+2. Section Depth: Each thematic subsection (e.g., Clinical Applications, Technical Methodologies) must consist of at least two to three fully articulated paragraphs.
+3. Analytical Tone: Write in a comprehensive, academic, and flowing textbook style. Avoid brief bullet points or rushed conclusions.
+
 REQUIRED STRUCTURE (Use Markdown):
 # Literature Review
 
