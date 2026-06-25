@@ -19,9 +19,14 @@ Decision C: validation — verify the bytes really are a PDF (magic marker),
 Decision D: caching — persist validated raw PDF bytes under data/pdf_cache,
             keyed by paper_id, so re-runs skip the download.
 Decision E: parsing — extract per-page text via PyMuPDF.
+Decision F: reason threading — every attempt now carries a machine-readable
+            ``reason`` (paywall / timeout / not_a_pdf / scanned_no_text / …)
+            on the returned ``PdfExtractionResult``, so the IngestorAgent can
+            surface *why* a PDF failed in the trace and as a per-paper metric
+            (feeds observability + the Termin-5 PDF-coverage measurement).
 
-NOT in scope here: cleanup of headers/footers/bibliography (Phase 4) and
-chunking. Just: URL in, raw per-page text out.
+NOT in scope here: cleanup of headers/footers/bibliography (Phase 4b) and
+chunking. Just: URL in, raw per-page text + a reason out.
 
 Requires: PyMuPDF  (``pip install PyMuPDF``; imported as ``fitz``).
 """
@@ -45,6 +50,7 @@ _USER_AGENT = (
 _REQUEST_TIMEOUT = (10, 30)            # (connect, read) seconds
 _MAX_PDF_BYTES = 30 * 1024 * 1024      # 30 MB hard cap
 _DOWNLOAD_CHUNK = 64 * 1024            # 64 KB per streamed chunk
+_MAX_RETRIES = 3                       # only transient failures are retried (F)
 
 # Decision D — local PDF cache, alongside data/chroma_db and data/api_keys.
 # Path is derived from this file's location (project root), not the CWD.
@@ -52,6 +58,28 @@ _PROJECT_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
 _CACHE_DIR = os.path.join(_PROJECT_ROOT, "data", "pdf_cache")
+
+
+# ------------------------------------------------------------------ #
+#  Decision F — reason vocabulary (single source of truth)
+# ------------------------------------------------------------------ #
+# Exactly one of these is always set on PdfExtractionResult.reason.
+# "ok" means usable text was extracted; everything else explains the failure
+# precisely enough to drive both the UI trace and the Termin-5 metrics.
+REASON_OK = "ok"
+REASON_NO_URL = "no_url"                 # Semantic Scholar gave no OA link
+REASON_PAYWALL = "paywall"               # HTTP 403 (blocked / behind a wall)
+REASON_NOT_FOUND = "not_found"           # HTTP 404 (dead link)
+REASON_HTTP_ERROR = "http_error"         # any other non-200 status
+REASON_TIMEOUT = "timeout"               # connect/read timeout
+REASON_CONNECTION = "connection_error"   # DNS / refused / malformed URL / …
+REASON_OVERSIZE = "oversize"             # exceeded the size cap
+REASON_NOT_A_PDF = "not_a_pdf"           # 200 OK, but bytes are HTML/captcha
+REASON_UNREADABLE = "unreadable_pdf"     # encrypted / corrupt (fitz failed)
+REASON_SCANNED = "scanned_no_text"       # opened fine, but image-only (no text)
+
+# Transient → worth a retry. Everything else is permanent → stop immediately.
+_TRANSIENT_REASONS = {REASON_TIMEOUT, REASON_CONNECTION, REASON_HTTP_ERROR}
 
 
 @dataclass
@@ -65,15 +93,15 @@ class PdfExtractionResult:
         One ``(page_number, text)`` tuple per page that contains text.
         Page numbers are **1-based** (page 1 = first page). An empty list
         means nothing usable was extracted.
-
-    Note
-    ----
-    A status/reason field (e.g. "paywall", "timeout", "scanned_no_text")
-    will be added in decision F. For now, an empty ``pages`` list is the
-    signal for "no usable content".
+    reason : str
+        Decision F — a machine-readable explanation of how the attempt ended.
+        One of the ``REASON_*`` constants above. ``REASON_OK`` iff ``pages``
+        is non-empty. On every failure path it names the precise cause
+        (paywall, timeout, not_a_pdf, scanned_no_text, …).
     """
 
     pages: list[tuple[int, str]] = field(default_factory=list)
+    reason: str = REASON_NO_URL  # overwritten on every path of fetch_pdf_text
 
     def full_text(self, separator: str = "\n\n") -> str:
         """Flatten all pages into one string (for FAST / MEDIUM callers)."""
@@ -90,35 +118,40 @@ def fetch_pdf_text(url: str | None, paper_id: str) -> PdfExtractionResult:
     Download a PDF and extract its text, preserving page boundaries.
 
     Contract: this function NEVER raises for an expected failure (no URL,
-    download error, not a PDF, parse error, empty text). It returns an
-    empty / content-less ``PdfExtractionResult`` instead. The caller decides
-    what to do (Phase 3: silent fallback to abstract-only).
+    download error, not a PDF, parse error, empty text). It returns a
+    content-less ``PdfExtractionResult`` whose ``reason`` names the cause
+    instead. The caller decides what to do (silent fallback to abstract-only).
 
     Parameters
     ----------
     url : str | None
-        The open-access PDF URL. ``None`` → immediate empty result.
+        The open-access PDF URL. ``None`` → immediate ``no_url`` result.
     paper_id : str
         Stable identifier; used as the cache key (decision D).
 
     Returns
     -------
     PdfExtractionResult
-        ``pages`` populated on success, empty otherwise.
+        ``pages`` populated + ``reason == "ok"`` on success; empty ``pages``
+        + a specific failure ``reason`` otherwise.
     """
     result = PdfExtractionResult()
 
     # No open-access link (e.g. paywall) → nothing to do.
     if not url:
+        result.reason = REASON_NO_URL
         return result
 
     # --- D wraps B + C: cache-aware retrieval of validated PDF bytes -----
-    pdf_bytes = _get_pdf_bytes(url, paper_id)
+    pdf_bytes, reason = _get_pdf_bytes(url, paper_id)
     if pdf_bytes is None:
+        result.reason = reason
         return result
 
     # --- E: parse with PyMuPDF into 1-based (page_no, text) tuples -------
-    result.pages = _extract_pages(pdf_bytes)
+    pages, reason = _extract_pages(pdf_bytes)
+    result.pages = pages
+    result.reason = reason
     return result
 
 
@@ -126,46 +159,58 @@ def fetch_pdf_text(url: str | None, paper_id: str) -> PdfExtractionResult:
 #  Decision D — cache-aware retrieval (orchestrates cache + B + C)
 # ------------------------------------------------------------------ #
 
-def _get_pdf_bytes(url: str, paper_id: str) -> bytes | None:
+def _get_pdf_bytes(url: str, paper_id: str) -> tuple[bytes | None, str]:
     """
-    Return valid PDF bytes, using the local cache when possible.
+    Return valid PDF bytes + a reason, using the local cache when possible.
 
     Order:
-      1. Cache hit  → return cached bytes (validated when written).
-      2. Cache miss → download (B), validate (C), then cache (D) and return.
+      1. Cache hit  → (cached bytes, "ok")   — validated when written.
+      2. Cache miss → download (B, with retry), validate (C), cache (D).
 
     Only validated PDFs are ever written to the cache, so a cached HTML
     error page can never poison later runs. Never raises.
     """
     cached = _read_cache(paper_id)
     if cached is not None:
-        return cached
+        return cached, REASON_OK
 
-    raw = None
-    retries = 0
-
-    while raw is None and retries <4:
-        raw = _download_pdf(url)
-        retries +=1
-    
+    raw, reason = _download_with_retries(url)
     if raw is None:
-        return None
+        return None, reason
 
     # Only cache real PDFs (C) — never persist an HTML error / paywall page.
     if not _looks_like_pdf(raw):
-        return None
+        return None, REASON_NOT_A_PDF
 
     _write_cache(paper_id, raw)
-    return raw
+    return raw, REASON_OK
+
+
+def _download_with_retries(url: str) -> tuple[bytes | None, str]:
+    """
+    Download raw bytes, retrying ONLY transient failures (decision F).
+
+    A permanent failure (paywall, dead link) is hopeless to retry, so we stop
+    at once instead of burning ~4 polite delays on a 403. Returns the bytes
+    and ``REASON_OK`` on success, or ``None`` and the last failure reason.
+    """
+    reason = REASON_CONNECTION
+    for _ in range(_MAX_RETRIES):
+        raw, reason = _download_pdf(url)
+        if raw is not None:
+            return raw, REASON_OK
+        if reason not in _TRANSIENT_REASONS:
+            break  # permanent — retrying won't change anything
+    return None, reason
 
 
 # ------------------------------------------------------------------ #
 #  Decision B — download
 # ------------------------------------------------------------------ #
 
-def _download_pdf(url: str) -> bytes | None:
+def _download_pdf(url: str) -> tuple[bytes | None, str]:
     """
-    Download raw PDF bytes over HTTP.
+    Download raw PDF bytes over HTTP, returning ``(bytes, reason)``.
 
     Robustness measures:
     - connect/read timeout, so a hanging server can't block the pipeline;
@@ -174,20 +219,14 @@ def _download_pdf(url: str) -> bytes | None:
     - an explicit User-Agent, since some servers reject the default
       ``python-requests`` UA with a 403.
 
-    Returns
-    -------
-    bytes | None
-        The raw bytes on HTTP 200, or ``None`` on any failure (non-200,
-        timeout, oversize, connection error, malformed URL). Never raises.
-
-    Note
-    ----
-    The distinct failure *reasons* (paywall / timeout / oversize) will be
-    threaded out in decision F. For now every failure collapses to ``None``.
+    Decision F: instead of collapsing every failure to ``None``, the distinct
+    causes are named — paywall (403), not_found (404), http_error (other
+    non-200), oversize, timeout, connection_error. ``REASON_OK`` on HTTP 200
+    with bytes read. Never raises.
     """
     headers = {"User-Agent": _USER_AGENT, "Accept": "application/pdf"}
 
-    sleep(0.5)
+    sleep(0.5)  # politeness delay before hitting the server
     try:
         with requests.get(
             url,
@@ -196,9 +235,12 @@ def _download_pdf(url: str) -> bytes | None:
             stream=True,
             allow_redirects=True,
         ) as resp:
-            # 403 = paywall/blocked, 404 = dead link, etc.
+            if resp.status_code == 403:
+                return None, REASON_PAYWALL      # blocked / behind a wall
+            if resp.status_code == 404:
+                return None, REASON_NOT_FOUND    # dead link
             if resp.status_code != 200:
-                return None
+                return None, REASON_HTTP_ERROR   # 5xx, 429, … (transient)
 
             buffer = bytearray()
             for chunk in resp.iter_content(chunk_size=_DOWNLOAD_CHUNK):
@@ -207,13 +249,16 @@ def _download_pdf(url: str) -> bytes | None:
                 buffer.extend(chunk)
                 if len(buffer) > _MAX_PDF_BYTES:
                     # Abort early — don't pull an oversized file into memory.
-                    return None
+                    return None, REASON_OVERSIZE
 
-            return bytes(buffer)
+            return bytes(buffer), REASON_OK
 
+    except requests.Timeout:
+        # Must come before RequestException — Timeout is a subclass of it.
+        return None, REASON_TIMEOUT
     except requests.RequestException:
-        # Timeout, ConnectionError, TooManyRedirects, MissingSchema, ...
-        return None
+        # ConnectionError, TooManyRedirects, MissingSchema, InvalidURL, ...
+        return None, REASON_CONNECTION
 
 
 # ------------------------------------------------------------------ #
@@ -293,22 +338,24 @@ def _write_cache(paper_id: str, data: bytes) -> None:
 #  Decision E — parsing (PyMuPDF / fitz)
 # ------------------------------------------------------------------ #
 
-def _extract_pages(pdf_bytes: bytes) -> list[tuple[int, str]]:
+def _extract_pages(pdf_bytes: bytes) -> tuple[list[tuple[int, str]], str]:
     """
     Extract per-page text from raw PDF bytes using PyMuPDF (fitz).
 
     - Opens the PDF from the in-memory byte stream (no temp file needed).
     - Returns one ``(page_number, text)`` tuple per page that contains text,
       with **1-based** page numbers (decision A).
-    - Pages whose extracted text is empty / whitespace are skipped, so a
-      scanned (image-only) PDF naturally yields an empty list — there is no
-      OCR here, and an image-only page carries no retrievable text.
+    - Pages whose extracted text is empty / whitespace are skipped.
 
-    Never raises: an encrypted / corrupt PDF (fitz fails to open) or any
-    extraction error returns an empty list instead.
+    Decision F: distinguishes the two empty-output cases that used to look
+    identical —
+        * ``unreadable_pdf``  : fitz could not open it (encrypted / corrupt);
+        * ``scanned_no_text`` : opened fine, but no extractable text at all
+                                (image-only / scanned — no OCR here).
+    ``REASON_OK`` with the pages otherwise. Never raises.
 
     No cleanup (headers / footers / bibliography) and no chunking happen
-    here — that is Phase 4 / the IngestorAgent's job. Raw per-page text only.
+    here — that is Phase 4b / the IngestorAgent's job. Raw per-page text only.
     """
     pages: list[tuple[int, str]] = []
 
@@ -319,7 +366,11 @@ def _extract_pages(pdf_bytes: bytes) -> list[tuple[int, str]]:
                 if text:
                     pages.append((page_number, text))
     except Exception:
-        # Encrypted, corrupt, or otherwise unreadable PDF → no content.
-        return []
+        # Encrypted, corrupt, or otherwise unreadable PDF.
+        return [], REASON_UNREADABLE
 
-    return pages
+    if not pages:
+        # Opened, but every page was image-only / empty → no retrievable text.
+        return [], REASON_SCANNED
+
+    return pages, REASON_OK

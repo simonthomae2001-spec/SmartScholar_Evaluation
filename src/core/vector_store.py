@@ -17,8 +17,10 @@ Key contract (decided with the team):
 Chunking is config-driven (SSOT): ``chunk_size`` (TOKENS) comes from the
 active profile (fast 1024 / medium 512 / pro 256).
 
-Lifecycle (0.C): the collection is reset per research run via
-``reset_collection()``.
+Lifecycle: the collection is cleared by the UI (session start / "Start Over")
+via the module-level ``clear_collection()`` — a lightweight delete that does
+NOT load any model. The Ingestor then re-binds to the (empty) collection via
+``VectorEngine.rebind()`` before ingesting.
 """
 
 import os
@@ -36,14 +38,19 @@ from src.core.model_factory import ModelFactory
 # drown in the SentenceSplitter default overlap of 200 tokens.
 _CHUNK_OVERLAP_RATIO = 0.15
 
+# Defaults shared with clear_collection() so the UI can clear the exact same
+# collection the VectorEngine uses, without instantiating a VectorEngine.
+_DEFAULT_COLLECTION = "scholar_papers"
+_DEFAULT_DB_PATH = "./data/chroma_db"
+
 
 class VectorEngine:
     """Owns chunking, embedding, and ChromaDB storage for one research run."""
 
-    def __init__(self, collection_name: str = "scholar_papers"):
+    def __init__(self, collection_name: str = _DEFAULT_COLLECTION):
         os.makedirs("./data", exist_ok=True)
 
-        self.db = chromadb.PersistentClient(path="./data/chroma_db")
+        self.db = chromadb.PersistentClient(path=_DEFAULT_DB_PATH)
         self.collection_name = collection_name
 
         self.llm = ModelFactory.get_model()
@@ -78,6 +85,17 @@ class VectorEngine:
             self.db.delete_collection(self.collection_name)
         except Exception:
             pass  # Collection didn't exist yet → nothing to delete.
+        self._build_index()
+
+    def rebind(self) -> None:
+        """
+        Re-bind to the current ChromaDB collection, recreating it empty if it
+        was deleted out from under us (e.g. the UI cleared it on 'Start Over').
+
+        Cheap — it only refreshes the collection / index handles; the embedding
+        model stays loaded on ``self`` and is NOT reloaded. The Ingestor calls
+        this before each run so its writes land in the freshly-cleared store.
+        """
         self._build_index()
 
     # ------------------------------------------------------------------ #
@@ -183,7 +201,7 @@ class VectorEngine:
 
     def get_retriever(self, similarity_top_k: int = 3, filters=None):
         """Return a retriever (vector search only, no LLM synthesis).
-        
+
         Parameters
         ----------
         similarity_top_k : int
@@ -195,3 +213,26 @@ class VectorEngine:
             similarity_top_k=similarity_top_k,
             filters=filters
         )
+
+
+# ====================================================================== #
+#  Module-level: lightweight collection clear for the UI
+# ====================================================================== #
+
+def clear_collection(
+    collection_name: str = _DEFAULT_COLLECTION,
+    db_path: str = _DEFAULT_DB_PATH,
+) -> None:
+    """
+    Delete the ChromaDB collection WITHOUT loading any models.
+
+    The UI calls this on session start and on 'Start Over', so the knowledge
+    base is emptied immediately (page stays fast) instead of lazily at the next
+    ingestion. The Ingestor's VectorEngine.rebind() then recreates the (empty)
+    collection on the next run. Best-effort — never raises.
+    """
+    try:
+        client = chromadb.PersistentClient(path=db_path)
+        client.delete_collection(collection_name)
+    except Exception:
+        pass  # didn't exist → nothing to clear

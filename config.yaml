@@ -15,6 +15,11 @@ profiles:
     max_queries: 5
     top_n_papers: 5
     read_depth: hybrid
+    # Thema B: of the top_n_papers active papers (ranked by relevance), only
+    # the top full_text_top_n get the full-text PDF; the rest are ingested as
+    # abstract only. PDF and abstract are never stored together for one paper.
+    # (Ignored by fast/pro, whose read_depth fixes the full-text count anyway.)
+    full_text_top_n: 3
     chunk_size: 512
     max_loops: 2
     critic_pass_threshold: 60
