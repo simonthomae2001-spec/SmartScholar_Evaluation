@@ -90,22 +90,14 @@ def main():
     # Our single-thread throttle for Ollama
     ollama_config = RunConfig(max_workers=1, timeout=60)
 
-    # The trick: We write the RunConfig directly into the internal
-    # property dictionary of the metric objects. This bypasses any error messages!
     metric_faithfulness.__dict__["run_config"] = ollama_config
     metric_context_utilization.__dict__["run_config"] = ollama_config
 
     metrics = [metric_faithfulness, metric_context_utilization]
 
-    # 3. Load your experiment data (WITH ABSOLUTE PATH FIX)
-    # Determine the directory where THIS script is located
-    # Find the "Evaluate/" folder
+    # 3. Load your experiment data
     current_dir = os.path.dirname(os.path.abspath(__file__))
-
-    # Go up one folder to the main project and then enter "data/"
     log_path = os.path.join(current_dir, "..", "..", "data", "experiment_baseline_logs.json")
-
-    # Clean up the path (remove the "..")
     log_path = os.path.normpath(log_path)
 
     print(f"Searching for log file at: {log_path}")
@@ -113,26 +105,23 @@ def main():
     dataset = load_smartscholar_logs(log_path)
     print(f"Successfully loaded {len(dataset)} test cases from logs.")
 
-    # 4. Run evaluation (NOW ABSOLUTELY CLEAN, NO WRONG KEYWORDS)
+    # 4. Run evaluation
     print("Running LLM-as-a-Judge evaluation (Ollama is now running serially)...")
     results = evaluate(
         dataset=dataset,
         metrics=metrics
-        # No extra keywords here anymore – Ragas gets the info via the metrics!
     )
 
-    # 5. Evaluate and save results (DYNAMIC FIX FOR KEYERROR)
+    # 5. Evaluate and save results
     print("\n=== EVALUATION RESULTS ===")
     df = results.to_pandas()
 
     # Check live what Ragas wrote into the DataFrame
     print(f"Available columns in result: {list(df.columns)}")
 
-    # Search for the matching question column (often 'question' or 'user_input')
     frage_col = 'user_input' if 'user_input' in df.columns else (
         'question' if 'question' in df.columns else df.columns[0])
 
-    # Print the entire DataFrame so nothing can go wrong!
     print("\nAll test results:")
     print(df.to_string())
 

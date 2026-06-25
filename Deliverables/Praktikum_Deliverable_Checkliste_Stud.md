@@ -66,8 +66,8 @@
   - [ ] **Projekt D:** Funktionierender Agent inkl. Tool-Zugriff, erste naive Guardrails, erste Angriffsversuche
   - [ ] **Projekt E:** Mind. drei Agenten mit Persönlichkeiten und persistentem Memory, die in mind. einem Szenario interagieren
   - [ ] **Projekt F:** Vollständiger Workflow für mind. einen Eingabe-Typ, mit klarem Input und Output
-- [ ] Mehrere End-to-End-Durchläufe durchgeführt und protokolliert (Varianz beobachtet)
-- [ ] Auffälliges/unerwartetes Systemverhalten notiert
+- [x] Mehrere End-to-End-Durchläufe durchgeführt und protokolliert (Varianz beobachtet)
+- [x] Auffälliges/unerwartetes Systemverhalten notiert
 
 **Pflicht-Deliverable Termin 3**
 
@@ -97,8 +97,8 @@
 
 **Ziel:** Belegen, *wie gut* das System ist – und unter welchen Bedingungen es versagt.
 
-- [ ] Mind. **eine quantitative und eine qualitative Metrik** definiert
-- [ ] **Eine konkrete Hypothese** formuliert, die experimentell überprüft wird
+- [x] Mind. **eine quantitative und eine qualitative Metrik** definiert
+- [x] **Eine konkrete Hypothese** formuliert, die experimentell überprüft wird
 - [ ] Experiment durchgeführt mit **mind. drei Durchläufen pro Variante**; alle Ergebnisse dokumentiert (auch unerwartete)
 - [ ] Iteration durchgeführt: bei aufgedeckten Schwächen eine Komponente verbessert und erneut gemessen
 
