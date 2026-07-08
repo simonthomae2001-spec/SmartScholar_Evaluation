@@ -10,7 +10,7 @@ Current implementation: **stub** returning mock structured data.
 
 from __future__ import annotations
 
-from typing import Callable, List
+from typing import Callable, List, Dict
 
 from llama_index.core import PromptTemplate
 from llama_index.core.llms import ChatMessage, MessageRole
@@ -54,12 +54,24 @@ class AnalystAgent:
         "Provided passages:"
         "{passages}"
     )
+    FEEDBACK_PROMPT = (
+        "You have to filled out all the sections of an analysis record based on the following extracted passages from an academic paper."
+        " The sections are: methodology, key findings, limitations and overall relevance for the users original query. "
+        " The original user query was:"
+        " {user_query}"
+        "Provided passages:"
+        "{passages}"
+        "Your output was reviewed an needs improvements."
+        "Here is the feedback provided:"
+        "{feedback}"
+    )
 
 
 
     def __init__(self, collection_name: str = "scholar_papers"):
         self.llm = ModelFactory.get_model()
         self.vector_engine:VectorEngine =None
+        self._analysis_data: Dict[dict] = {}
 
     def _generate_questions(self, title:str) ->List[str]:
         """
@@ -172,6 +184,21 @@ class AnalystAgent:
         
         return record
     
+    def _process_feedback(self, query_results: List[str], orig_query:str, feedback: Dict)-> AnalysisRecord:
+        prompt = self.FEEDBACK_PROMPT.format(user_query=orig_query, passages=query_results, feedback=str(feedback))
+        record = structured_predicted_with_retries(
+            llm= self.llm,
+            output_cls= self.AnalysisRecord,
+            messages=[ChatMessage(role=MessageRole.USER, content=prompt)],
+            logger=self._log,
+            msg= "Failed generating AnalysisRecord! Retrying..."
+        )
+        if record is None:
+            self._log("⚠️ Failed to generate record! Using fallback instead")
+            return self.FALLBACK_RECORD
+        
+        return record
+    
     def _log(self, msg:str):
         if not self.status_callback is None:
             self.status_callback(msg)
@@ -181,6 +208,7 @@ class AnalystAgent:
         papers: list[dict],
         query: str,
         vector_engine: VectorEngine,
+        feedback: Dict[int, dict],
         status_callback: Callable[[str], None] | None = None,
     ) -> list[dict]:
         """
@@ -202,15 +230,21 @@ class AnalystAgent:
         """
         self.status_callback = status_callback
         self.vector_engine = vector_engine
-        analysis_data: list[dict] = []
+        
 
         for idx, paper in enumerate(papers, start=1):
             title = paper.get("title")
-            self._log(f"\nAnalyzing paper: ***{title}***")
-            pre_record = self._extract_information(title, query)
+
+            if len(feedback) == 0:
+                self._log(f"\nAnalyzing paper: ***{title}***")
+                pre_record = self._extract_information(title, query)
+            else:
+                self._log(f"\nRefactoring record for: ***{title}***")
+                pre_record = self._process_feedback(title, query, feedback[idx])
+
                         
             record = {
-                "citation_id": f"[{idx}]",
+                "citation_id": idx,
                 "methodology": pre_record.methodology,
                 "findings": pre_record.findings,
                 "limitations": pre_record.limitations,
@@ -219,6 +253,6 @@ class AnalystAgent:
                     f"{pre_record.user_relevance}"
                 ),
             }
-            analysis_data.append(record)
+            self._analysis_data[idx] = record
 
-        return analysis_data
+        return list(self._analysis_data.values())
