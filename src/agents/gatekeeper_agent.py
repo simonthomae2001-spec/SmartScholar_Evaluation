@@ -71,10 +71,10 @@ class GatekeeperAgent:
         "- If the input is safe but unclear, too broad, or not obviously suited "
         "for academic literature research, set severity to \"content_issue\". "
         "Set can_override to true if the user may still choose to research it.\n"
-        "- If can_override is true, follow_up_question should ask the user, in "
-        "German, whether they want to continue with this wording as an academic "
+        "- If can_override is true, follow_up_question should ask the user "
+        " whether they want to continue with this wording as an academic "
         "research task.\n\n"
-        "The reason must be concise, user-facing, and written in German.\n\n"
+        "The reason must be concise, user-facing, and written.\n\n"
         "user_input: {user_input}\n\n"
         "JSON object:"
     )

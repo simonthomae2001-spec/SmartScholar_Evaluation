@@ -317,26 +317,18 @@ def critic_node(state: GraphState, config: RunnableConfig) -> dict:
 
 
 def synthesizer_node(state: GraphState, config: RunnableConfig) -> dict:
-    """
-    Step 16 — Compose the final literature review from approved claims.
-
-    Übergibt die verifizierten Analysedaten vollautomatisch an den
-    echten SynthesizerAgent, der nun die finale Review generiert.
-    """
+    """Step 16 — Compose the final literature review from approved claims."""
     def _agent_cb(msg: str):
         _ui_log(config, msg)
 
-    _agent_cb("📝 [System] Starte die finale Text-Synthese aus echten Daten...")
+    _agent_cb("📝 [System] Starting final synthesis from real data...")
 
-    # 1. Instanz des echten Agenten holen (wird über das Singleton oben gelöst)
     agent = _get_synthesizer()
 
-    # 2. Den Agenten mit dem aktuellen Zustand (inkl. der echten 'paper_analysis_data') aufrufen
     agent_output = agent.synthesize_review(state, config, status_callback=_agent_cb)
 
-    _agent_cb("✅ [System] Text-Synthese erfolgreich abgeschlossen.")
+    _agent_cb("✅ [System] Test-synthesis finalized sucessfully.")
 
-    # 3. Das Ergebnis (enthält den Key 'final_review') an den Graphen zurückgeben
     return agent_output
 
 
@@ -466,7 +458,7 @@ def build_analysis_graph():
 
 def build_synthesizer_graph():
     """
-    Baut einen isolierten, linearen GRAPHEN nur für die Textgenerierung.
+    Builds one isolated, linear graph just for genereating texts.
     """
     builder = StateGraph(GraphState)
 
