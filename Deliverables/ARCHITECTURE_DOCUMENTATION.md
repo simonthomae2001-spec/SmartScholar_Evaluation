@@ -845,4 +845,12 @@ graph LR
 
 ---
 
+## 7. Current Limitations & Future Work
+
+While the system successfully implements an end-to-end agentic workflow, a few core limitations exist in its current iteration:
+
+* **Concise Literature Reviews:** The generated literature review currently tends to be relatively short. When using smaller or weaker local language models, they often struggle to maintain context and produce long-form, comprehensive narratives. To mitigate this without relying on massive commercial models, a future architecture should incorporate a *Multi-Agent Synthesizer* to break the drafting process down into iterative, section-by-section tasks.
+* **Full-Text Availability Gaps:** The system is constrained by external source data. It is not currently possible to fetch the full text of every single paper within the Semantic Scholar or arXiv databases due to paywalls, licensing restrictions, or incomplete API extraction. Consequently, the pipeline must frequently fall back on analyzing abstracts or limited open-access subsets rather than the full body of work. It might be possible in future expansions, to give the API all available accesses of paid services or alternatively to give the user the option to upload files themselves.
+---
+
 > **End of Document**

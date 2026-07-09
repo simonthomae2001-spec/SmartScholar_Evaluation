@@ -114,23 +114,23 @@
 
 **Ziel:** Alles für Termin 7 läuft zuverlässig; die Dokumentation ist vollständig.
 
-- [ ] Repository aufgeräumt: Code formatiert, ungenutzte Dateien entfernt, README aktualisiert, Abhängigkeiten dokumentiert (`requirements.txt` / `pyproject.toml`)
-- [ ] **Projekt-Dokumentation (4–8 Seiten)** geschrieben, mit allen Punkten:
-  - [ ] Motivation und Zielsetzung
-  - [ ] Architekturüberblick (mit Diagramm)
-  - [ ] Designentscheidungen und ihre Begründung
+- [x] Repository aufgeräumt: Code formatiert, ungenutzte Dateien entfernt, README aktualisiert, Abhängigkeiten dokumentiert (`requirements.txt` / `pyproject.toml`)
+- [x] **Projekt-Dokumentation (4–8 Seiten)** geschrieben, mit allen Punkten:
+  - [x] Motivation und Zielsetzung
+  - [x] Architekturüberblick (mit Diagramm)
+  - [x] Designentscheidungen und ihre Begründung
   - [ ] Evaluation und Ergebnisse
-  - [ ] Limitationen und Failure Modes
-  - [ ] Was man mit mehr Zeit anders/zusätzlich machen würde
-- [ ] **Live-Demo** vorbereitet (Use Case, benötigte Daten, Notfallplan bei Fehlschlag)
-- [ ] **Präsentationsfolien (10–15 Folien)** erstellt – Struktur: Problem & Motivation / Lösungsansatz & Architektur / Demo / Evaluation & Ergebnisse / Erkenntnisse & Limitationen / Fazit
-- [ ] **Trockenlauf** in der Gruppe durchgeführt (Zeit gestoppt, alle reden mind. einmal)
+  - [x] Limitationen und Failure Modes
+  - [x] Was man mit mehr Zeit anders/zusätzlich machen würde
+- [x] **Live-Demo** vorbereitet (Use Case, benötigte Daten, Notfallplan bei Fehlschlag)
+- [x] **Präsentationsfolien (10–15 Folien)** erstellt – Struktur: Problem & Motivation / Lösungsansatz & Architektur / Demo / Evaluation & Ergebnisse / Erkenntnisse & Limitationen / Fazit
+- [x] **Trockenlauf** in der Gruppe durchgeführt (Zeit gestoppt, alle reden mind. einmal)
 
 **Pflicht-Deliverable Termin 6**
 
-- [ ] Aufgeräumtes Repository mit vollständiger Doku
-- [ ] Präsentationsfolien im Repo
-- [ ] Backup-Video der Demo (kurzer Bildschirmmitschnitt) für den Notfall
+- [x] Aufgeräumtes Repository mit vollständiger Doku
+- [x] Präsentationsfolien im Repo
+- [x] Backup-Video der Demo (kurzer Bildschirmmitschnitt) für den Notfall
 
 ---
 
@@ -138,10 +138,10 @@
 
 **Format:** 15–20 Min. Vortrag inkl. Live-Demo, danach ca. 10 Min. Diskussion.
 
-- [ ] Vortrag mit Live-Demo nach der in Termin 6 vorbereiteten Struktur gehalten
-- [ ] Diskussion bestritten (Fragen zu Designentscheidungen, Trade-offs, Failure Modes)
-- [ ] Jedes Gruppenmitglied hat mind. einen inhaltlichen Beitrag geleistet
-- [ ] **Übergabe:** finale Dokumentation **und** Repository-Link an den Dozenten
+- [x] Vortrag mit Live-Demo nach der in Termin 6 vorbereiteten Struktur gehalten
+- [x] Diskussion bestritten (Fragen zu Designentscheidungen, Trade-offs, Failure Modes)
+- [x] Jedes Gruppenmitglied hat mind. einen inhaltlichen Beitrag geleistet
+- [x] **Übergabe:** finale Dokumentation **und** Repository-Link an den Dozenten
 
 ---
 
