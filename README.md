@@ -76,34 +76,3 @@ SmartScholar/
         └── scholar_tool.py
 ```
 
-## Getting Started
-
-Follow these steps to initialize and run the SmartScholar copilot locally:
-
-1. **Clone the Repository:**
-   ```bash
-   git clone <repository-url>
-   cd SmartScholar
-   ```
-
-2. **Set Up a Virtual Environment:**
-   ```bash
-   python -m venv .venv
-   ```
-   *Activate the environment:*
-   - Windows: `.venv\Scripts\activate`
-   - macOS/Linux: `source .venv/bin/activate`
-
-3. **Install Dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Configuration Setup:**
-   Ensure `config.yaml` is present at the root directory. This dictates the active limits for the search profiles.
-
-5. **Start the Application:**
-   Launch the Streamlit interface:
-   ```bash
-   streamlit run app.py
-   ```

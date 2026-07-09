@@ -149,17 +149,17 @@
 
 Alle nachfolgenden Artefakte sollten am Ende im Repository vorhanden sein:
 
-- [ ] `README.md` (Projektinfo, Gruppe, Architekturskizze – aktuell gehalten)
-- [ ] Architekturdokument (1–2 Seiten)
-- [ ] Lauffähiges System mit Start-Anleitung
-- [ ] Lab Notebook (Beobachtungen aus Durchläufen)
-- [ ] Observability-Logs / Logging-Setup
-- [ ] Edge-Case-Liste mit Lösungsansätzen
+- [x] `README.md` (Projektinfo, Gruppe, Architekturskizze – aktuell gehalten)
+- [x] Architekturdokument (1–2 Seiten)
+- [x] Lauffähiges System mit Start-Anleitung
+- [x] Lab Notebook (Beobachtungen aus Durchläufen)
+- [x] Observability-Logs / Logging-Setup
+- [x] Edge-Case-Liste mit Lösungsansätzen
 - [ ] Guardrails (sofern projekt-relevant: A, D, F)
 - [ ] Metriken-Definition
 - [ ] Hypothesen-Dokument mit Versuchsaufbau + Ergebnissen
 - [ ] Schriftliche Reflexion
-- [ ] Projekt-Dokumentation (4–8 Seiten)
+- [x] Projekt-Dokumentation (4–8 Seiten)
 - [ ] Präsentationsfolien
 - [ ] Backup-Demo-Video
 - [ ] Transparenz-Hinweis zur Nutzung von Coding-Assistenten (wer/was beigetragen hat)
