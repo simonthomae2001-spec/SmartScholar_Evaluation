@@ -17,6 +17,10 @@ class ModelFactory:
 
         # Initialize and return the Ollama model
         # Initialize and return the Ollama model with a higher generation limit
+        url = os.getenv("LLM_HOST_URL")
+        if url is not None:
+            return Ollama(model=model_name, base_url=url, request_timeout=300.0, context_window=context_size, additional_kwargs={"num_predict": 1024})
+        
         return Ollama(model=model_name, request_timeout=300.0, context_window=context_size, additional_kwargs={"num_predict": 1024})
 
     @staticmethod
@@ -36,6 +40,9 @@ class ModelFactory:
         """
         ModelFactory._load_env()
         model_name = os.getenv("EMBED_MODEL_NAME", "nomic-embed-text")
+        # url = os.getenv("LLM_HOST_URL")
+        # if url is not None:
+        #     return OllamaEmbedding(model_name=model_name, base_url=url)
         return OllamaEmbedding(model_name=model_name)
 
     @staticmethod

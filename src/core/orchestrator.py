@@ -278,11 +278,12 @@ def analyst_node(state: GraphState, config: RunnableConfig) -> dict:
     papers = state.get("active_papers", [])
     query = state.get("user_query", "")
     vector_engine = state.get("vectorEngine")
+    feed_back = state.get("critic_feedback", "")
 
     def _agent_cb(msg: str):
         _ui_log(config, msg)
 
-    analysis_data = agent.analyze_papers(papers, query, vector_engine, _agent_cb)
+    analysis_data = agent.analyze_papers(papers, query, vector_engine, feed_back, _agent_cb)
     _ui_log(config, "✅ [System] Analysis complete.")
 
     return {"paper_analysis_data": analysis_data}

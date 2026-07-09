@@ -17,6 +17,7 @@ its own paper's chunks (no cross-contamination between papers).
 from __future__ import annotations
 
 import json
+from typing import List, Dict
 import re
 from typing import Callable
 
@@ -152,6 +153,7 @@ class CriticAgent:
 
         # ----- Per-record LLM evaluation ------------------------------ #
         all_issues: list[str] = []
+        feedback_per_record: Dict[int, dict] = {}
         record_verdicts: list[dict] = []
 
         top_k: int = config.get("critic_top_k", 3)
@@ -163,6 +165,7 @@ class CriticAgent:
             source_text = self._build_verification_context(record, top_k, _log)
             verdict = self._evaluate_record(record, source_text, _log)
             record_verdicts.append(verdict)
+            feedback_per_record[cid] = verdict
 
             # Log the LLM's verdict for this record
             score = verdict.get("consistency_score", 0)
@@ -200,38 +203,11 @@ class CriticAgent:
             )
             return (True, feedback)
 
-        # ----- Build targeted feedback for the Analyst ---------------- #
-        feedback_parts: list[str] = [
-            f"Verification FAILED (avg consistency {avg_score:.0f}/100, "
-            f"threshold {pass_threshold}/100).  "
-            f"Loop {loop_count + 1}/{max_loops}.",
-            "",
-            "Issues requiring revision:",
-        ]
-
-        if all_issues:
-            for i, issue in enumerate(all_issues, start=1):
-                feedback_parts.append(f"  {i}. {issue}")
-        else:
-            feedback_parts.append(
-                "  (No specific issues extracted, but aggregate score "
-                "is below threshold.  Please improve analysis depth.)"
-            )
-
-        # Append per-record summaries
-        feedback_parts.append("")
-        feedback_parts.append("Per-record summaries:")
-        for rec, verdict in zip(analysis_data, record_verdicts):
-            cid = rec.get("citation_id", "?")
-            score = verdict.get("consistency_score", "N/A")
-            summary = verdict.get("summary", "No summary.")
-            feedback_parts.append(f"  {cid} (score {score}/100): {summary}")
-
         _log(
             "🛑 [Critic] Verification failed. "
             "Sending feedback back to Analyst."
         )
-        return (False, "\n".join(feedback_parts))
+        return (False, feedback_per_record)
 
     # ------------------------------------------------------------------ #
     #  RAG-based source context retrieval

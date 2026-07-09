@@ -239,7 +239,7 @@ __pycache__/
 .idea/
 *.iml
 
-data/chroma_db/
 chroma_db/
 pdf_cache/
 *.iml
+*.sqlite3
