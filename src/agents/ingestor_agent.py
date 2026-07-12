@@ -99,8 +99,8 @@ class IngestorAgent:
         # Over"); here we only re-bind to the current collection — cheap, no
         # model reload — and ingest into it.
         _log(
-            f"🗄️ [Ingestor] Ingesting — "
-            f"full text for top {quota} of {len(papers)} papers…"
+            f"[Ingestor] Ingesting — "
+            f"full text for top {quota} of {len(papers)} papers"
         )
         self.vector_engine.rebind()
 
@@ -109,7 +109,7 @@ class IngestorAgent:
             paper["citation_id"] = citation_id
 
             title = paper.get("title") or "Untitled"
-            _log(f"📄 [Ingestor] Ingesting {citation_id} — {title[:60]}…")
+            _log(f"[Ingestor] Ingesting {citation_id} — {title[:60]}")
 
             wants_full_text = idx <= quota
 
@@ -121,7 +121,7 @@ class IngestorAgent:
                 # Abstract by intent: FAST, or a MEDIUM paper below the cutoff.
                 if read_depth != "abstract":
                     _log(
-                        f"   📝 {citation_id} rank {idx} > top-{quota} "
+                        f"  ↳ {citation_id} rank {idx} > top-{quota} "
                         f"→ abstract only (policy)"
                     )
                 res = self._ingest_abstract(paper, citation_id, chunk_size, intended=True)
@@ -142,11 +142,11 @@ class IngestorAgent:
         reason_dist = Counter(p.get("pdf_reason", _REASON_NOT_ATTEMPTED) for p in papers)
         source_dist = Counter(p.get("pdf_source") for p in papers if p.get("pdf_source"))
 
-        _log(f"📊 [Ingestor] PDF-Reasons: {self._fmt_counter(reason_dist)}")
+        _log(f"[Ingestor] PDF-Reasons: {self._fmt_counter(reason_dist)}")
         if source_dist:
-            _log(f"📊 [Ingestor] PDF-Sources: {self._fmt_counter(source_dist)}")
+            _log(f"[Ingestor] PDF-Sources: {self._fmt_counter(source_dist)}")
 
-        _log(f"✅ [Ingestor] Done — {len(papers)} papers ingested.")
+        _log(f"✓ [Ingestor] Done — {len(papers)} papers ingested")
         return papers, self.vector_engine
 
     # ------------------------------------------------------------------ #
@@ -219,7 +219,7 @@ class IngestorAgent:
         page metadata. Fallback to abstract-only if no usable PDF.
         """
         paper_id = paper.get("paperId") or citation_id
-        log(f"   ⬇️ {citation_id} Suche Volltext-PDF…")
+        log(f"  ↳ {citation_id} Downloading full-text PDF...")
 
         outcome = fetch_pdf_with_fallback(paper, paper_id, log=log)
 
@@ -232,14 +232,14 @@ class IngestorAgent:
                 metadata=self._meta(paper),
             )
             if chunk_ids:
-                log(f"   ✅ {citation_id} PDF via {outcome.source}")
+                log(f"  ↳ {citation_id} PDF acquired via {outcome.source}")
                 return _DepthResult(
                     chunk_ids, "success_pdf", "pdf", REASON_OK, outcome.source
                 )
 
         log(
-            f"   ⚠️ {citation_id} kein PDF ({outcome.result.reason}) "
-            f"→ Abstract-Fallback"
+            f"  ↳ ⚠ {citation_id} No PDF ({outcome.result.reason}) "
+            f"→ abstract fallback"
         )
         res = self._ingest_abstract(paper, citation_id, chunk_size, intended=False)
         res.pdf_reason = outcome.result.reason
@@ -261,7 +261,7 @@ class IngestorAgent:
         Critic). PDF only — no abstract. Fallback to abstract-only on failure.
         """
         paper_id = paper.get("paperId") or citation_id
-        log(f"   ⬇️ {citation_id} Suche Volltext-PDF (page-aware)…")
+        log(f"  ↳ {citation_id} Downloading full-text PDF (page-aware)...")
 
         outcome = fetch_pdf_with_fallback(paper, paper_id, log=log)
 
@@ -273,14 +273,14 @@ class IngestorAgent:
                 metadata=self._meta(paper),
             )
             if chunk_ids:
-                log(f"   ✅ {citation_id} PDF via {outcome.source}")
+                log(f"  ↳ {citation_id} PDF acquired via {outcome.source}")
                 return _DepthResult(
                     chunk_ids, "success_pdf", "full_pdf", REASON_OK, outcome.source
                 )
 
         log(
-            f"   ⚠️ {citation_id} kein PDF ({outcome.result.reason}) "
-            f"→ Abstract-Fallback"
+            f"  ↳ ⚠ {citation_id} No PDF ({outcome.result.reason}) "
+            f"→ abstract fallback"
         )
         res = self._ingest_abstract(paper, citation_id, chunk_size, intended=False)
         res.pdf_reason = outcome.result.reason

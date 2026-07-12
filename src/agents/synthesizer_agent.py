@@ -65,7 +65,7 @@ class SynthesizerAgent:
 
         # Fallback if no data is received
         if not analysis_data:
-            _log("⚠️ [Synthesizer] No analysis data found in the state. Aborting synthesis.")
+            _log("⚠ [Synthesizer] No analysis data found in state — aborting synthesis")
             return {"final_review": "Error: No analysed papers were found for the synthesis."}
 
         # 2. Format the analysis data for the prompt
@@ -77,7 +77,7 @@ class SynthesizerAgent:
             paper_data=formatted_data
         )
 
-        _log(f"📝 [Synthesizer] start LLM-Synthesis for {len(analysis_data)} Paper...")
+        _log(f"🧠 [Synthesizer] Starting LLM synthesis for {len(analysis_data)} papers")
 
         try:
             # 4. Call LLM (LlamaIndex standard for Ollama calls)
@@ -86,12 +86,12 @@ class SynthesizerAgent:
             # Extract the response as a string (the .text suffix is often required in LlamaIndex)
             final_review_text = str(response)
             
-            _log("✅ [Synthesizer] Synthesis successfully completed.")
+            _log("✓ [Synthesizer] Synthesis complete")
             # 5. Return a partial update for the graph state
             return {"final_review": final_review_text}
             
         except Exception as e:
-            _log(f"❌ [Synthesizer] Error during review generation: {str(e)}")
+            _log(f"✕ [Synthesizer] Error during review generation: {str(e)}")
             return {"final_review": f"Error during review generation: {str(e)}"}
 
     def _format_paper_data(self, analysis_data: list[dict]) -> str:

@@ -365,7 +365,7 @@ def append_to_evaluation_logs(final_state: dict, filepath: str = "data/experimen
 # ------------------------------------------------------------------ #
 #  Sidebar
 # ------------------------------------------------------------------ #
-st.sidebar.title("⚙️ Settings")
+st.sidebar.title("Settings")
 
 try:
     model_name = ModelFactory.get_model_name()
@@ -404,7 +404,7 @@ st.sidebar.markdown(
 # Reset button (always available when not idle)
 if st.session_state.workflow_step != "idle":
     st.sidebar.markdown("---")
-    if st.sidebar.button("🔄 Start Over", use_container_width=True):
+    if st.sidebar.button("Start Over", use_container_width=True):
         clear_collection()
         _reset_workflow()
         st.rerun()
@@ -551,9 +551,9 @@ elif st.session_state.workflow_step == "query_review":
     gs = st.session_state.graph_state
     strategy = gs.get("query_strategy", "")
     if strategy:
-        st.info(f"🧠 **Agent Search Strategy:** {strategy}")
+        st.info(f"🧠 **Search Strategy:** {strategy}")
 
-    st.markdown("### ✏️ Review Search Queries")
+    st.markdown("### Review Search Queries")
     st.markdown("**Foundational Query (Always Included):**")
     st.info(f"**`{st.session_state.current_query}`**")
 
@@ -594,14 +594,14 @@ elif st.session_state.workflow_step == "query_review":
     col_regen, col_accept = st.columns(2)
 
     with col_regen:
-        if st.button("🔁 Regenerate", use_container_width=True):
+        if st.button("Regenerate", use_container_width=True):
             # Bump generation counter so the next render creates fresh widget keys
             st.session_state.query_gen += 1
             st.session_state.workflow_step = "enhancing"
             st.rerun()
 
     with col_accept:
-        if st.button("✅ Accept & Search", type="primary", use_container_width=True):
+        if st.button("Accept & Search", type="primary", use_container_width=True):
             # Keep only checked queries
             accepted = [
                 q for q, ok in zip(updated_queries, enabled_flags) if ok and q.strip()
@@ -622,7 +622,7 @@ elif st.session_state.workflow_step == "searching":
     with st.chat_message("user"):
         st.write(st.session_state.current_query)
 
-    with st.status("🔍 Searching Semantic Scholar & scoring papers…", expanded=True) as status:
+    with st.status("Searching Semantic Scholar & scoring papers…", expanded=True) as status:
         trace = list(st.session_state.trace_steps)
 
         # Pre-fill historical trace logs
@@ -668,7 +668,7 @@ elif st.session_state.workflow_step == "paper_review":
     active = gs.get("active_papers", [])
     discarded = gs.get("discarded_papers", [])
 
-    st.markdown("### 📄 Review Active Papers")
+    st.markdown("### Review Active Papers")
     st.caption(
         f"Top {len(active)} papers ranked by relevance. "
         "Uncheck to remove, or add from the reserve pool."
@@ -696,10 +696,10 @@ elif st.session_state.workflow_step == "paper_review":
 
             rationale = paper.get("score_rationale", "")
             if rationale:
-                st.markdown(f"🧠 **Agent Rationale:** {rationale}")
+                st.markdown(f"🧠 **Rationale:** {rationale}")
 
             if url:
-                st.markdown(f"[🔗 View on Semantic Scholar]({url})")
+                st.markdown(f"[View on Semantic Scholar]({url})")
             st.markdown("---")
             st.markdown(f"**Abstract:** {abstract}")
 
@@ -718,7 +718,7 @@ elif st.session_state.workflow_step == "paper_review":
     with col_add:
         add_disabled = len(discarded) == 0
         if st.button(
-                "➕ Add Alternative Paper",
+                "Add Alternative Paper",
                 use_container_width=True,
                 disabled=add_disabled,
                 help="Pull the next-highest-scored paper from the reserve pool",
@@ -733,7 +733,7 @@ elif st.session_state.workflow_step == "paper_review":
 
     with col_fin:
         if st.button(
-                "🚀 Finalize Research",
+                "🧠 Finalize Research",
                 type="primary",
                 use_container_width=True,
         ):
@@ -762,7 +762,7 @@ elif st.session_state.workflow_step == "paper_review":
 
     # Show reserve pool size
     if discarded:
-        st.caption(f"📦 Reserve pool: {len(discarded)} papers available")
+        st.caption(f"Reserve pool: {len(discarded)} papers available")
 
 # ================================================================== #
 #  STEP 4.5 — Ingesting: ingest papers + run analyst pipeline
@@ -774,7 +774,7 @@ elif st.session_state.workflow_step == "ingesting":
         st.write(st.session_state.current_query)
 
     with st.status(
-            "🧠 Agent Pipeline (Ingestion, Analyse & Synthese)…", expanded=True
+            "🧠 Agent Pipeline (Ingestion, Analysis & Synthesis)…", expanded=True
     ) as status:
         trace = list(st.session_state.trace_steps)
 
@@ -817,7 +817,7 @@ elif st.session_state.workflow_step == "done":
 
     # Persist the trace logs so the user can review the entire thought process
     if st.session_state.trace_steps:
-        with st.expander("🧠 Agent Trace", expanded=False):
+        with st.expander("Execution Trace", expanded=False):
             for step in st.session_state.trace_steps:
                 st.write(step)
 
@@ -828,14 +828,14 @@ elif st.session_state.workflow_step == "done":
     # Log Graphstate
     append_to_evaluation_logs(gs)
 
-    st.markdown("### ✅ Research Finalised")
+    st.markdown("### Research Finalised")
     st.success(
         f"**{len(active)} papers** selected and assigned citation IDs. "
         "The state is ready for the next agent."
     )
 
     # Citation table
-    st.markdown("#### 📚 Final Paper Selection")
+    st.markdown("#### Final Paper Selection")
     for paper in active:
         cid = paper.get("citation_id", "")
         title = paper.get("title", "Untitled")
@@ -856,17 +856,17 @@ elif st.session_state.workflow_step == "done":
 
             rationale = paper.get("score_rationale", "")
             if rationale:
-                st.markdown(f"🧠 **Agent Rationale:** {rationale}")
+                st.markdown(f"🧠 **Rationale:** {rationale}")
 
             if url:
-                st.markdown(f"[🔗 View on Semantic Scholar]({url})")
+                st.markdown(f"[View on Semantic Scholar]({url})")
             st.markdown("---")
             st.markdown(f"{abstract}")
 
     # Final Review Output
     if review:
         st.markdown("---")
-        st.markdown("### 📝 Final Literature Review")
+        st.markdown("### Final Literature Review")
         st.markdown(review)
 
     # Download final review as Markdown
@@ -874,7 +874,7 @@ elif st.session_state.workflow_step == "done":
     today = datetime.now().strftime("%Y-%m-%d")
     review_text = gs.get("final_review", "") or "No review generated."
     st.download_button(
-        label="📥 Download Literature Review (.md)",
+        label="Download Literature Review (.md)",
         data=review_text,
         file_name=f"smartscholar_review_{today}.md",
         mime="text/markdown",

@@ -241,7 +241,7 @@ class ResearcherAgent:
 
         for i, q in enumerate(queries, start=1):
             if status_callback:
-                status_callback(f"🔎 **Query {i}/{len(queries)}:** `{q}`")
+                status_callback(f"🧠 [Researcher - Search] Query {i}/{len(queries)}: `{q}`")
 
             results = ScholarTool.search_papers(q, limit=limit_per_query)
 
@@ -254,13 +254,13 @@ class ResearcherAgent:
             if status_callback:
                 new_count = len(all_papers)
                 status_callback(
-                    f"   ↳ Found {len(results)} results, "
-                    f"**{new_count} unique papers** so far."
+                    f"  ↳ Found {len(results)} results, "
+                    f"{new_count} unique papers so far"
                 )
 
         if status_callback:
             status_callback(
-                f"✅ **Deduplication complete — {len(all_papers)} unique papers collected.**"
+                f"✓ [Researcher - Search] Deduplication complete — {len(all_papers)} unique papers collected"
             )
 
         return all_papers

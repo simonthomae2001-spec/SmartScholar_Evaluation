@@ -93,7 +93,7 @@ class AnalystAgent:
             msg= "Failed generating AnalystQuestions! Retrying..."
         )
         if questions is None:
-            self._log("⚠️ Failed to generate questions! Using Fallback instead")
+            self._log("⚠ [Analyst] Failed to generate questions, using fallback")
             return self.FALLBACK_QUESTIONS
         
         return questions.questions
@@ -150,7 +150,7 @@ class AnalystAgent:
             msg= "Failed generating AnalysisRecord! Retrying..."
         )
         if record is None:
-            self._log("⚠️ Failed to generate record! Using fallback instead")
+            self._log("⚠ [Analyst] Failed to generate record, using fallback")
             return self.FALLBACK_RECORD
         
         return record
@@ -169,18 +169,18 @@ class AnalystAgent:
         Returns : AnalysisRecord
         """
         questions = self._generate_questions(title)
-        self._log(f"Generated {len(questions)} questions: ")
+        self._log(f"🧠 [Analyst] Generated {len(questions)} questions:")
         for idx, q in enumerate(questions):
-            self._log(f"``{idx}. {q}``")
+            self._log(f"  ↳ {idx}. {q}")
 
         passages = self._query_vector_db(title, questions)
-        self._log(f"Retrieved passages from chroma: {len(passages)} passages found.")
+        self._log(f"  ↳ Retrieved {len(passages)} passages from ChromaDB")
 
-        self._log(f"Generating record...")
+        self._log(f"🧠 [Analyst] Generating analysis record...")
         record = self._generate_record(passages, orig_query)
-        self._log(f"\n Metrology:\n ``{record.methodology}``\n")
-        self._log(f"\n Findings:\n ``{record.findings}``\n")
-        self._log(f"\n Limitations:\n ``{record.limitations}``\n")
+        self._log(f"  ↳ Methodology: {record.methodology[:120]}")
+        self._log(f"  ↳ Findings: {record.findings[:120]}")
+        self._log(f"  ↳ Limitations: {record.limitations[:120]}")
         
         return record
     
@@ -194,7 +194,7 @@ class AnalystAgent:
             msg= "Failed generating AnalysisRecord! Retrying..."
         )
         if record is None:
-            self._log("⚠️ Failed to generate record! Using fallback instead")
+            self._log("⚠ [Analyst] Failed to generate record, using fallback")
             return self.FALLBACK_RECORD
         
         return record
@@ -236,10 +236,10 @@ class AnalystAgent:
             title = paper.get("title")
 
             if len(feedback) == 0:
-                self._log(f"\nAnalyzing paper: ***{title}***")
+                self._log(f"🧠 [Analyst] Analyzing paper: {title}")
                 pre_record = self._extract_information(title, query)
             else:
-                self._log(f"\nRefactoring record for: ***{title}***")
+                self._log(f"🧠 [Analyst] Revising record for: {title}")
                 pre_record = self._process_feedback(title, query, feedback[idx])
 
                         

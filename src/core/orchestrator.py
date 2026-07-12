@@ -125,13 +125,13 @@ def gatekeeper_node(state: GraphState, config: RunnableConfig) -> dict:
     Sets ``is_valid``, ``validation_reason``, and Gatekeeper confirmation
     metadata used by the UI retry flow.
     """
-    _ui_log(config, "⚙️ [System] Starting Gatekeeper Agent...")
+    _ui_log(config, "[System] Starting Gatekeeper...")
 
     if state.get("gatekeeper_confirmed", False) and state.get(
             "gatekeeper_override_allowed", False
     ):
         reason = "Durch Benutzerbestätigung akzeptiert."
-        _ui_log(config, f"✅ [Gatekeeper] Query accepted: {reason}")
+        _ui_log(config, f"✓ [Gatekeeper] Query accepted: {reason}")
         return {
             "is_valid": True,
             "validation_reason": reason,
@@ -145,7 +145,7 @@ def gatekeeper_node(state: GraphState, config: RunnableConfig) -> dict:
 
     if state.get("gatekeeper_confirmed", False):
         reason = "Diese Ablehnung kann nicht per Benutzerbestätigung überschrieben werden."
-        _ui_log(config, f"❌ [Gatekeeper] Query rejected: {reason}")
+        _ui_log(config, f"✕ [Gatekeeper] Query rejected: {reason}")
         return {
             "is_valid": False,
             "validation_reason": reason,
@@ -173,11 +173,11 @@ def gatekeeper_node(state: GraphState, config: RunnableConfig) -> dict:
     needs_confirmation = bool(not is_valid and can_override)
 
     if is_valid:
-        _ui_log(config, f"✅ [Gatekeeper] Query accepted: {reason}")
+        _ui_log(config, f"✓ [Gatekeeper] Query accepted: {reason}")
     elif needs_confirmation:
-        _ui_log(config, f"❓ [Gatekeeper] Query needs confirmation: {reason}")
+        _ui_log(config, f"⚠ [Gatekeeper] Query needs confirmation: {reason}")
     else:
-        _ui_log(config, f"❌ [Gatekeeper] Query rejected: {reason}")
+        _ui_log(config, f"✕ [Gatekeeper] Query rejected: {reason}")
 
     return {
         "is_valid": is_valid,
@@ -198,7 +198,7 @@ def researcher_enhance_node(state: GraphState, config: RunnableConfig) -> dict:
     The number of search phrases is strictly bounded by
     ``config["max_queries"]``.
     """
-    _ui_log(config, "⚙️ [System] Starting Researcher Agent (Query Expansion)...")
+    _ui_log(config, "[System] Starting Researcher - Expansion...")
     agent = _get_researcher()
     cfg = _resolve_config(state)
 
@@ -208,8 +208,8 @@ def researcher_enhance_node(state: GraphState, config: RunnableConfig) -> dict:
     )
 
     if strategy:
-        _ui_log(config, f"🧠 [Researcher] Strategy: {strategy}")
-    _ui_log(config, f"✅ [System] Generated {len(queries)} search queries.")
+        _ui_log(config, f"🧠 [Researcher - Expansion] Strategy: {strategy}")
+    _ui_log(config, f"✓ [System] Generated {len(queries)} search queries")
 
     return {"search_queries": queries, "query_strategy": strategy}
 
@@ -221,7 +221,7 @@ def researcher_search_node(state: GraphState, config: RunnableConfig) -> dict:
 
     The split point is ``config["top_n_papers"]``.
     """
-    _ui_log(config, "⚙️ [System] Starting Researcher Agent (Search)...")
+    _ui_log(config, "[System] Starting Researcher - Search...")
     agent = _get_researcher()
     cfg = _resolve_config(state)
 
@@ -237,10 +237,10 @@ def researcher_search_node(state: GraphState, config: RunnableConfig) -> dict:
     )
 
     # 2. Score, rank, and split
-    _ui_log(config, f"🏆 [System] Scoring & ranking {len(papers)} retrieved papers...")
+    _ui_log(config, f"[System] Scoring & ranking {len(papers)} retrieved papers")
     active, discarded = agent.evaluate_papers(papers, state["user_query"], cfg)
 
-    _ui_log(config, f"✅ [System] Retained {len(active)} active papers ({len(discarded)} in reserve pool).")
+    _ui_log(config, f"✓ [System] Retained {len(active)} active papers ({len(discarded)} in reserve pool)")
 
     return {
         "active_papers": active,
@@ -253,7 +253,7 @@ def ingestor_node(state: GraphState, config: RunnableConfig) -> dict:
     Steps 10A, 10B, 11B — Ingest paper content at the configured
     ``read_depth`` with the configured ``chunk_size``.
     """
-    _ui_log(config, "⚙️ [System] Starting Ingestor Agent...")
+    _ui_log(config, "[System] Starting Ingestor...")
     agent = _get_ingestor()
     cfg = _resolve_config(state)
 
@@ -264,7 +264,7 @@ def ingestor_node(state: GraphState, config: RunnableConfig) -> dict:
 
     papers = state.get("active_papers", [])
     ingested, vector_engine = agent.ingest_knowledge(papers, cfg, status_callback=_agent_cb)
-    _ui_log(config, "✅ [System] Ingestion complete.")
+    _ui_log(config, "✓ [System] Ingestion complete")
 
     return {"active_papers": ingested, "vectorEngine": vector_engine}
 
@@ -273,7 +273,7 @@ def analyst_node(state: GraphState, config: RunnableConfig) -> dict:
     """
     Steps 12 & 13 — Produce structured analysis records for each paper.
     """
-    _ui_log(config, "⚙️ [System] Starting Analyst Agent...")
+    _ui_log(config, "[System] Starting Analyst...")
     agent = _get_analyst()
     papers = state.get("active_papers", [])
     query = state.get("user_query", "")
@@ -284,7 +284,7 @@ def analyst_node(state: GraphState, config: RunnableConfig) -> dict:
         _ui_log(config, msg)
 
     analysis_data = agent.analyze_papers(papers, query, vector_engine, feed_back, _agent_cb)
-    _ui_log(config, "✅ [System] Analysis complete.")
+    _ui_log(config, "✓ [System] Analysis complete")
 
     return {"paper_analysis_data": analysis_data}
 
@@ -293,7 +293,7 @@ def critic_node(state: GraphState, config: RunnableConfig) -> dict:
     """
     Steps 14 & 15 — Verify the analysis and decide whether to loop.
     """
-    _ui_log(config, "⚙️ [System] Starting Critic Agent...")
+    _ui_log(config, "[System] Starting Critic...")
     agent = _get_critic()
     cfg = _resolve_config(state)
     loop_count = state.get("loop_count", 0)
@@ -321,13 +321,13 @@ def synthesizer_node(state: GraphState, config: RunnableConfig) -> dict:
     def _agent_cb(msg: str):
         _ui_log(config, msg)
 
-    _agent_cb("📝 [System] Starting final synthesis from real data...")
+    _agent_cb("[System] Starting Synthesizer...")
 
     agent = _get_synthesizer()
 
     agent_output = agent.synthesize_review(state, config, status_callback=_agent_cb)
 
-    _agent_cb("✅ [System] Test-synthesis finalized sucessfully.")
+    _agent_cb("✓ [System] Synthesis complete")
 
     return agent_output
 

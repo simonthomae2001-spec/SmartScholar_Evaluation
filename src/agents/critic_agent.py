@@ -128,27 +128,27 @@ class CriticAgent:
                 status_callback(msg)
 
         _log(
-            f"🕵️ [Critic] Starting verification "
-            f"(round {loop_count + 1}/{max_loops}, "
-            f"threshold {pass_threshold}/100)…"
+            f"🧠 [Critic] Verification started "
+            f"(Round {loop_count + 1}/{max_loops}, "
+            f"Threshold: {pass_threshold}/100)"
         )
 
         # ----- Guard: loop budget exhausted → auto-approve ------------ #
         if loop_count >= max_loops:
             _log(
-                f"⚠️ [Critic] Loop budget exhausted ({loop_count}/{max_loops}). "
-                f"Auto-approving {len(analysis_data)} records."
+                f"⚠ [Critic] Loop budget exhausted ({loop_count}/{max_loops}). "
+                f"Auto-approving {len(analysis_data)} records"
             )
             return (
                 True,
-                f"⚠️ Loop budget exhausted ({loop_count}/{max_loops}). "
-                f"Auto-approving {len(analysis_data)} analysis records "
+                f"Loop budget exhausted ({loop_count}/{max_loops}). "
+                f"Auto-approved {len(analysis_data)} analysis records "
                 f"without further verification.",
             )
 
         # ----- No data to verify -------------------------------------- #
         if not analysis_data:
-            _log("ℹ️ [Critic] No analysis records to verify — passing vacuously.")
+            _log("[Critic] No analysis records to verify — passing vacuously")
             return (True, "No analysis records to verify — passing vacuously.")
 
         # ----- Per-record LLM evaluation ------------------------------ #
@@ -160,7 +160,7 @@ class CriticAgent:
 
         for record in analysis_data:
             cid = record.get("citation_id", "?")
-            _log(f"📖 [Critic] Verifying paper {cid}…")
+            _log(f"🧠 [Critic] Verifying paper {cid}")
 
             source_text = self._build_verification_context(record, top_k, _log)
             verdict = self._evaluate_record(record, source_text, _log)
@@ -174,21 +174,21 @@ class CriticAgent:
 
             if issues:
                 for issue in issues:
-                    _log(f"   ❌ Issue: {issue}")
+                    _log(f"  ↳ ✕ Issue: {issue}")
                     all_issues.append(f"{cid} — {issue}")
             else:
-                _log(f"   ✅ No issues found (score {score}/100).")
+                _log(f"  ↳ ✓ No issues found (score {score}/100)")
 
             if summary:
-                _log(f"   📝 Verdict: {summary}")
+                _log(f"  ↳ Verdict: {summary}")
 
         # ----- Aggregate decision ------------------------------------- #
         scores = [v.get("consistency_score", 0) for v in record_verdicts]
         avg_score = sum(scores) / len(scores) if scores else 0
 
         _log(
-            f"📊 [Critic] Aggregate score: {avg_score:.0f}/100 "
-            f"(threshold {pass_threshold}/100)."
+            f"[Critic] Aggregate score: {avg_score:.0f}/100 "
+            f"(Threshold: {pass_threshold}/100)"
         )
 
         if avg_score >= pass_threshold and not all_issues:
@@ -198,14 +198,14 @@ class CriticAgent:
                 f"(avg consistency {avg_score:.0f}/100). No issues found."
             )
             _log(
-                "🟢 [Critic] All facts verified. "
-                "Releasing analysis to Synthesizer."
+                "✓ [Critic] All facts verified — "
+                "releasing to Synthesizer"
             )
             return (True, feedback)
 
         _log(
-            "🛑 [Critic] Verification failed. "
-            "Sending feedback back to Analyst."
+            "✕ [Critic] Verification failed — "
+            "sending feedback to Analyst"
         )
         return (False, feedback_per_record)
 
@@ -258,32 +258,32 @@ class CriticAgent:
 
         # Retrieve context for methodology claim
         if methodology:
-            _log(f"   🔍 Searching ChromaDB for methodology evidence ({citation_id})…")
+            _log(f"  ↳ Searching ChromaDB for methodology evidence ({citation_id})")
             meth_ctx = self._fetch_source_context(methodology, citation_id, top_k)
             if meth_ctx:
                 n_chunks = meth_ctx.count("\n---\n") + 1
-                _log(f"   📄 Found {n_chunks} chunk(s) for methodology.")
+                _log(f"  ↳ Found {n_chunks} chunk(s) for methodology")
                 context_parts.append(
                     f"[Source context for METHODOLOGY]\n{meth_ctx}"
                 )
             else:
-                _log(f"   ⚠️ No chunks found for methodology claim.")
+                _log(f"  ↳ ⚠ No chunks found for methodology claim")
 
         # Retrieve context for findings claim
         if findings:
-            _log(f"   🔍 Searching ChromaDB for findings evidence ({citation_id})…")
+            _log(f"  ↳ Searching ChromaDB for findings evidence ({citation_id})")
             find_ctx = self._fetch_source_context(findings, citation_id, top_k)
             if find_ctx:
                 n_chunks = find_ctx.count("\n---\n") + 1
-                _log(f"   📄 Found {n_chunks} chunk(s) for findings.")
+                _log(f"  ↳ Found {n_chunks} chunk(s) for findings")
                 context_parts.append(
                     f"[Source context for FINDINGS]\n{find_ctx}"
                 )
             else:
-                _log(f"   ⚠️ No chunks found for findings claim.")
+                _log(f"  ↳ ⚠ No chunks found for findings claim")
 
         if not context_parts:
-            _log(f"   🚫 No source context available for {citation_id} — verification will rely on fallback.")
+            _log(f"  ↳ ⚠ No source context available for {citation_id}")
             return "No source context found in database for verification."
 
         return "\n\n".join(context_parts)
@@ -402,7 +402,7 @@ class CriticAgent:
                 pass
 
         cid = record.get("citation_id", "?")
-        _log(f"   🤖 Sending {cid} to LLM for fact-check evaluation…")
+        _log(f"  ↳ Sending {cid} to LLM for fact-check evaluation")
 
         prompt = self.EVALUATION_PROMPT.format(
             citation_id=cid,
@@ -436,7 +436,7 @@ class CriticAgent:
                 elif rationale and summary:
                     summary = f"{summary} (Rationale: {rationale})"
 
-                _log(f"   📊 LLM score for {cid}: {score}/100.")
+                _log(f"  ↳ LLM score for {cid}: {score}/100")
                 return {
                     "consistency_score": score,
                     "issues": issues,
@@ -444,11 +444,11 @@ class CriticAgent:
                 }
 
             # Parsing returned None — LLM produced unparseable output
-            _log(f"   ⚠️ JSON parsing failed for {cid}. System: LLM output was severely truncated or invalid and could not be auto-repaired.")
+            _log(f"  ↳ ⚠ JSON parsing failed for {cid}")
 
         except Exception as exc:
             print(f"[CriticAgent] LLM evaluation failed: {exc}")
-            _log(f"   ⚠️ LLM evaluation failed for {cid}: {exc}")
+            _log(f"  ↳ ⚠ LLM evaluation failed for {cid}: {exc}")
 
         # Hard fallback: score 0 so the loop correctly rejects this record.
         return {
