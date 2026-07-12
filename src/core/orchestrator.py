@@ -306,13 +306,20 @@ def critic_node(state: GraphState, config: RunnableConfig) -> dict:
         analysis_data, cfg, loop_count, status_callback=_agent_cb,
     )
 
+    current_loop = loop_count + 1
+    max_loops = cfg.get("max_loops", 1)
+
     updates: dict = {
         "critic_feedback": feedback,
-        "loop_count": loop_count + 1,
+        "loop_count": current_loop,
+        "_critic_passed": passed,
     }
 
-    # Store the pass/fail decision for conditional routing
-    updates["_critic_passed"] = passed
+    if not passed and current_loop >= max_loops:
+        updates["_budget_exhausted"] = True
+    else:
+        updates["_budget_exhausted"] = False
+
     return updates
 
 
@@ -357,7 +364,7 @@ def _route_after_critic(state: GraphState) -> str:
     config = _resolve_config(state)
     loop_count = state.get("loop_count", 0)
 
-    if loop_count < config["max_loops"]:
+    if loop_count < config.get("max_loops", 1):
         return "analyst_node"
 
     # Budget exhausted → proceed to synthesis

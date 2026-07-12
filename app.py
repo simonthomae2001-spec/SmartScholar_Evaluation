@@ -369,13 +369,27 @@ st.sidebar.title("Settings")
 
 try:
     model_name = ModelFactory.get_model_name()
-    is_ready, status_msg = ModelFactory.check_availability(model_name)
+    if "llm_is_ready" not in st.session_state or "llm_status_msg" not in st.session_state:
+        is_ready, status_msg = ModelFactory.check_availability(model_name)
+        st.session_state.llm_is_ready = is_ready
+        st.session_state.llm_status_msg = status_msg
+        st.session_state.llm_offline = not is_ready
+
+    is_ready = st.session_state.llm_is_ready
+    status_msg = st.session_state.llm_status_msg
+
     if is_ready:
         st.sidebar.success(f"🟢 **{status_msg}**")
-        st.session_state.llm_offline = False
     else:
         st.sidebar.error(f"🔴 **{status_msg}**")
-        st.session_state.llm_offline = True
+
+    if st.sidebar.button("🔄 Refresh Status", key="refresh_llm_status", use_container_width=True):
+        is_ready, status_msg = ModelFactory.check_availability(model_name)
+        st.session_state.llm_is_ready = is_ready
+        st.session_state.llm_status_msg = status_msg
+        st.session_state.llm_offline = not is_ready
+        st.rerun()
+
 except Exception as e:
     st.sidebar.error(f"Error loading model name: {e}")
     st.session_state.llm_offline = True

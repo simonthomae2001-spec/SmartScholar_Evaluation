@@ -203,10 +203,18 @@ class CriticAgent:
             )
             return (True, feedback)
 
-        _log(
-            "✕ [Critic] Verification failed — "
-            "sending feedback to Analyst"
-        )
+        current_loop = loop_count + 1
+        if current_loop < max_loops:
+            _log(
+                "✕ [Critic] Verification failed — "
+                "sending feedback to Analyst"
+            )
+        else:
+            _log(
+                f"⚠ [Critic] Loop budget exhausted ({current_loop}/{max_loops}) "
+                "— force-releasing unverified records to Synthesizer"
+            )
+            
         return (False, feedback_per_record)
 
     # ------------------------------------------------------------------ #
