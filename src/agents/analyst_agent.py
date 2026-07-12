@@ -98,8 +98,17 @@ class AnalystAgent:
         
         return questions.questions
 
+    @staticmethod
+    def _normalize_id(cid: str | int) -> str:
+        s_id = str(cid).strip()
+        if not s_id.startswith("["):
+            s_id = f"[{s_id}]"
+        if not s_id.endswith("]"):
+            s_id = f"{s_id}]"
+        return s_id
+
     # TODO: Filter for duplicates
-    def _query_vector_db(self, title:str, questions:List[str]) ->List[str]:
+    def _query_vector_db(self, title:str, questions:List[str], citation_id: str | int) ->List[str]:
         """
         Searches the vector database with a set of questions an and returns
         the passages matching the Queries.
@@ -112,10 +121,11 @@ class AnalystAgent:
         Returns : List[str]
         """
         results = set()
-        # Create filter for this paper's title
+        # Create filter for this paper's citation_id
+        norm_id = self._normalize_id(citation_id)
         filters = MetadataFilters(filters=[MetadataFilter(
-            key="title",
-            value=title
+            key="citation_id",
+            value=norm_id
         )])
         retriever = self.vector_engine.get_retriever(
             similarity_top_k=5,
@@ -157,7 +167,7 @@ class AnalystAgent:
 
             
 
-    def _extract_information(self, title:str, orig_query:str) ->AnalysisRecord:
+    def _extract_information(self, title:str, orig_query:str, citation_id: str | int) ->AnalysisRecord:
         """
         Extracts information about metrology, key findings or limitations and relevance.
 
@@ -173,7 +183,7 @@ class AnalystAgent:
         for idx, q in enumerate(questions):
             self._log(f"  ↳ {idx}. {q}")
 
-        passages = self._query_vector_db(title, questions)
+        passages = self._query_vector_db(title, questions, citation_id)
         self._log(f"  ↳ Retrieved {len(passages)} passages from ChromaDB")
 
         self._log(f"🧠 [Analyst] Generating analysis record...")
@@ -184,8 +194,10 @@ class AnalystAgent:
         
         return record
     
-    def _process_feedback(self, query_results: List[str], orig_query:str, feedback: Dict)-> AnalysisRecord:
-        prompt = self.FEEDBACK_PROMPT.format(user_query=orig_query, passages=query_results, feedback=str(feedback))
+    def _process_feedback(self, title: str, orig_query:str, feedback: Dict, citation_id: str | int)-> AnalysisRecord:
+        questions = self._generate_questions(title)
+        passages = self._query_vector_db(title, questions, citation_id)
+        prompt = self.FEEDBACK_PROMPT.format(user_query=orig_query, passages=passages, feedback=str(feedback))
         record = structured_predicted_with_retries(
             llm= self.llm,
             output_cls= self.AnalysisRecord,
@@ -237,10 +249,10 @@ class AnalystAgent:
 
             if len(feedback) == 0:
                 self._log(f"🧠 [Analyst] Analyzing paper: {title}")
-                pre_record = self._extract_information(title, query)
+                pre_record = self._extract_information(title, query, idx)
             else:
                 self._log(f"🧠 [Analyst] Revising record for: {title}")
-                pre_record = self._process_feedback(title, query, feedback[idx])
+                pre_record = self._process_feedback(title, query, feedback[idx], idx)
 
                         
             record = {

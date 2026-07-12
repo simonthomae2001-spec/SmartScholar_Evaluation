@@ -221,6 +221,15 @@ class CriticAgent:
     #  RAG-based source context retrieval
     # ------------------------------------------------------------------ #
 
+    @staticmethod
+    def _normalize_id(cid: str | int) -> str:
+        s_id = str(cid).strip()
+        if not s_id.startswith("["):
+            s_id = f"[{s_id}]"
+        if not s_id.endswith("]"):
+            s_id = f"{s_id}]"
+        return s_id
+
     def _build_verification_context(
         self,
         record: dict,
@@ -230,35 +239,13 @@ class CriticAgent:
         """
         Build a combined source-text context for a single analysis record
         by retrieving relevant chunks for each verifiable claim.
-
-        Queries the VectorEngine for the record's methodology and findings
-        claims, filtering strictly by ``citation_id`` to prevent
-        cross-paper contamination. The retrieved chunks are concatenated
-        into a single context string for LLM evaluation.
-
-        Parameters
-        ----------
-        record : dict
-            A single analysis record from ``paper_analysis_data``.
-            Expected keys: ``citation_id``, ``methodology``, ``findings``,
-            ``limitations``, ``user_relevance``.
-        top_k : int
-            Number of top-K chunks to retrieve per claim, read from
-            ``config["critic_top_k"]`` (SSOT).
-        _log : Callable[[str], None] | None
-            Optional logging callback for trace-of-thought messages.
-
-        Returns
-        -------
-        str
-            Concatenated source excerpts for verification, or a fallback
-            message if no chunks are available.
         """
         if _log is None:
             def _log(msg: str) -> None:
                 pass
 
-        citation_id = record.get("citation_id", "?")
+        raw_id = record.get("citation_id", "?")
+        norm_id = self._normalize_id(raw_id)
         methodology = record.get("methodology", "")
         findings = record.get("findings", "")
 
@@ -266,8 +253,8 @@ class CriticAgent:
 
         # Retrieve context for methodology claim
         if methodology:
-            _log(f"  ↳ Searching ChromaDB for methodology evidence ({citation_id})")
-            meth_ctx = self._fetch_source_context(methodology, citation_id, top_k)
+            _log(f"  ↳ Searching ChromaDB for methodology evidence ({norm_id})")
+            meth_ctx = self._fetch_source_context(methodology, norm_id, top_k)
             if meth_ctx:
                 n_chunks = meth_ctx.count("\n---\n") + 1
                 _log(f"  ↳ Found {n_chunks} chunk(s) for methodology")
@@ -279,8 +266,8 @@ class CriticAgent:
 
         # Retrieve context for findings claim
         if findings:
-            _log(f"  ↳ Searching ChromaDB for findings evidence ({citation_id})")
-            find_ctx = self._fetch_source_context(findings, citation_id, top_k)
+            _log(f"  ↳ Searching ChromaDB for findings evidence ({norm_id})")
+            find_ctx = self._fetch_source_context(findings, norm_id, top_k)
             if find_ctx:
                 n_chunks = find_ctx.count("\n---\n") + 1
                 _log(f"  ↳ Found {n_chunks} chunk(s) for findings")
@@ -291,7 +278,7 @@ class CriticAgent:
                 _log(f"  ↳ ⚠ No chunks found for findings claim")
 
         if not context_parts:
-            _log(f"  ↳ ⚠ No source context available for {citation_id}")
+            _log(f"  ↳ ⚠ No source context available for {norm_id}")
             return "No source context found in database for verification."
 
         return "\n\n".join(context_parts)
