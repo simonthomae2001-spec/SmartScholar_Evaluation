@@ -667,6 +667,27 @@ elif st.session_state.workflow_step == "paper_review":
     gs = st.session_state.graph_state
     active = gs.get("active_papers", [])
     discarded = gs.get("discarded_papers", [])
+    # ---- Guard: zero search results ---- #
+    if not active and not discarded:
+        st.error(
+            "\u2715 [System] No papers found. Possible causes: "
+            "API rate limit (Semantic Scholar), network errors, "
+            "or overly specific search queries."
+        )
+        error_detail = gs.get("error") or gs.get("search_error")
+        if error_detail:
+            st.code(error_detail, language="text")
+
+        col_retry, col_back = st.columns(2)
+        with col_retry:
+            if st.button("Retry Search", use_container_width=True):
+                st.session_state.workflow_step = "searching"
+                st.rerun()
+        with col_back:
+            if st.button("Back to Query Review", use_container_width=True):
+                st.session_state.workflow_step = "query_review"
+                st.rerun()
+        st.stop()
 
     st.markdown("### Review Active Papers")
     st.caption(
@@ -732,33 +753,41 @@ elif st.session_state.workflow_step == "paper_review":
                 st.rerun()
 
     with col_fin:
+        selected_count = sum(1 for keep in keep_flags if keep)
         if st.button(
-                "🧠 Finalize Research",
+                "Finalize Research",
                 type="primary",
                 use_container_width=True,
+                disabled=(selected_count == 0),
         ):
-            # Remove unchecked papers
-            final_active = []
-            newly_discarded = list(discarded)  # copy
-            for paper, keep in zip(active, keep_flags):
-                if keep:
-                    final_active.append(paper)
-                else:
-                    newly_discarded.insert(0, paper)
+            if selected_count == 0:
+                st.warning(
+                    "\u26a0 [System] You must select at least one paper "
+                    "to start the analysis!"
+                )
+            else:
+                # Remove unchecked papers
+                final_active = []
+                newly_discarded = list(discarded)  # copy
+                for paper, keep in zip(active, keep_flags):
+                    if keep:
+                        final_active.append(paper)
+                    else:
+                        newly_discarded.insert(0, paper)
 
-            # Assign citation IDs
-            for idx, paper in enumerate(final_active, start=1):
-                paper["citation_id"] = f"[{idx}]"
+                # Assign citation IDs
+                for idx, paper in enumerate(final_active, start=1):
+                    paper["citation_id"] = f"[{idx}]"
 
-            gs["active_papers"] = final_active
-            gs["discarded_papers"] = newly_discarded
-            st.session_state.graph_state = gs
+                gs["active_papers"] = final_active
+                gs["discarded_papers"] = newly_discarded
+                st.session_state.graph_state = gs
 
-            # Hand off to a dedicated 'ingesting' step. This makes the page
-            # re-render from the top and run the pipeline in the main trace
-            # container, consistent with the other agents.
-            st.session_state.workflow_step = "ingesting"
-            st.rerun()
+                # Hand off to a dedicated 'ingesting' step. This makes the page
+                # re-render from the top and run the pipeline in the main trace
+                # container, consistent with the other agents.
+                st.session_state.workflow_step = "ingesting"
+                st.rerun()
 
     # Show reserve pool size
     if discarded:
@@ -831,7 +860,6 @@ elif st.session_state.workflow_step == "done":
     st.markdown("### Research Finalised")
     st.success(
         f"**{len(active)} papers** selected and assigned citation IDs. "
-        "The state is ready for the next agent."
     )
 
     # Citation table
