@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import httpx
 from typing import Any
 
 from src.core.model_factory import ModelFactory
@@ -114,6 +115,17 @@ class GatekeeperAgent:
             decision = self._coerce_decision(parsed)
             if decision:
                 return decision
+        except (httpx.ConnectError, httpx.TimeoutException, ConnectionError) as net_err:
+            print(f"[GatekeeperAgent] Validation failed due to network error: {net_err}")
+            return {
+                "accepted": False,
+                "is_valid": False,
+                "needs_confirmation": False,
+                "severity": "infrastructure_issue",
+                "can_override": False,
+                "follow_up_question": None,
+                "reason": f"\u2715 [System] LLM Connection Error: Unable to communicate with Ollama ({str(net_err)}).",
+            }
         except Exception as e:
             print(f"[GatekeeperAgent] Validation failed: {e}")
 

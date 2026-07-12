@@ -369,9 +369,16 @@ st.sidebar.title("Settings")
 
 try:
     model_name = ModelFactory.get_model_name()
-    st.sidebar.success(f"**Active Model:** `{model_name}`")
+    is_ready, status_msg = ModelFactory.check_availability(model_name)
+    if is_ready:
+        st.sidebar.success(f"🟢 **{status_msg}**")
+        st.session_state.llm_offline = False
+    else:
+        st.sidebar.error(f"🔴 **{status_msg}**")
+        st.session_state.llm_offline = True
 except Exception as e:
     st.sidebar.error(f"Error loading model name: {e}")
+    st.session_state.llm_offline = True
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Research Profile")
@@ -455,6 +462,14 @@ if st.session_state.workflow_step == "idle":
 
     query = st.chat_input("What would you like to research today?")
     if query:
+        if st.session_state.get("llm_offline", False):
+            st.error(
+                "\u2715 [System] Cannot start research: The LLM server is unreachable "
+                "or the configured model is missing. Please check your settings "
+                "in the sidebar."
+            )
+            st.stop()
+            
         if (
                 st.session_state.gatekeeper_pending_query
                 and _is_gatekeeper_confirmation(query)
