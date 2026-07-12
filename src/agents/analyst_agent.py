@@ -261,6 +261,9 @@ class AnalystAgent:
         self.vector_engine = vector_engine
         self.config = config
         
+        # Clear stale records from previous runs or UI resets
+        self._analysis_data.clear()
+        
         # Defensively re-hydrate the vector engine to ensure binding to the active collection
         if hasattr(self.vector_engine, 'rebind'):
             self.vector_engine.rebind()
