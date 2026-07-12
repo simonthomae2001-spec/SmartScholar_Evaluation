@@ -127,6 +127,12 @@ class CriticAgent:
             if status_callback:
                 status_callback(msg)
 
+        # Re-hydrate the vector engine to ensure binding to the active collection after UI resets
+        if hasattr(self, 'vector_engine') and self.vector_engine is not None:
+            self.vector_engine.rebind()
+        else:
+            self.vector_engine = VectorEngine()
+
         _log(
             f"🧠 [Critic] Verification started "
             f"(Round {loop_count + 1}/{max_loops}, "

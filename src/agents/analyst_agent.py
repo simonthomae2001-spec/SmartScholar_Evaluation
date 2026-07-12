@@ -243,6 +243,9 @@ class AnalystAgent:
         self.status_callback = status_callback
         self.vector_engine = vector_engine
         
+        # Defensively re-hydrate the vector engine to ensure binding to the active collection
+        if hasattr(self.vector_engine, 'rebind'):
+            self.vector_engine.rebind()
 
         for idx, paper in enumerate(papers, start=1):
             title = paper.get("title")
