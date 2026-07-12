@@ -279,8 +279,18 @@ class CriticAgent:
                 _log(f"  ↳ ⚠ No chunks found for findings claim")
 
         if not context_parts:
-            _log(f"  ↳ ⚠ No source context available for {norm_id}")
-            return "No source context found in database for verification."
+            _log(f"  ↳ ⚠ Claims are empty; attempting fallback general retrieval for ({norm_id})")
+            # Search ChromaDB using a generic query to pull the abstract or general content
+            fallback_query = "abstract introduction methodology findings conclusion"
+            fallback_ctx = self._fetch_source_context(fallback_query, norm_id, top_k)
+
+            if fallback_ctx:
+                n_chunks = fallback_ctx.count("\n---\n") + 1
+                _log(f"  ↳ Found {n_chunks} chunk(s) via general fallback search")
+                return f"[Source context for GENERAL VERIFICATION]\n{fallback_ctx}"
+            else:
+                _log(f"  ↳ ⚠ No source context available in ChromaDB for {norm_id}")
+                return "No source context found in database for verification."
 
         return "\n\n".join(context_parts)
 
