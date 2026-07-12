@@ -4,6 +4,8 @@ import httpx
 from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.ollama import OllamaEmbedding
 
+from src.core.config import get_system_config
+
 
 class ModelFactory:
     @staticmethod
@@ -19,10 +21,12 @@ class ModelFactory:
         # Initialize and return the Ollama model
         # Initialize and return the Ollama model with a higher generation limit
         url = os.getenv("LLM_HOST_URL")
-        if url is not None:
-            return Ollama(model=model_name, base_url=url, request_timeout=300.0, context_window=context_size, additional_kwargs={"num_predict": 1024})
+        timeout = get_system_config().get("network", {}).get("llm_timeout_seconds", 300.0)
         
-        return Ollama(model=model_name, request_timeout=300.0, context_window=context_size, additional_kwargs={"num_predict": 1024})
+        if url:
+            return Ollama(model=model_name, base_url=url, request_timeout=timeout, context_window=context_size)
+        
+        return Ollama(model=model_name, request_timeout=timeout, context_window=context_size)
 
     @staticmethod
     def get_model_name() -> str:
@@ -48,8 +52,11 @@ class ModelFactory:
             
         tags_url = f"{base_url.rstrip('/')}/api/tags"
         
+        sys_cfg = get_system_config()
+        timeout_val = sys_cfg.get("network", {}).get("health_check_timeout_seconds", 2.0)
+        
         try:
-            response = httpx.get(tags_url, timeout=2.0)
+            response = httpx.get(tags_url, timeout=timeout_val)
             response.raise_for_status()
             data = response.json()
             

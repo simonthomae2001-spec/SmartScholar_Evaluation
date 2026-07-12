@@ -48,6 +48,7 @@ from typing import Callable, Tuple
 from src.core.vector_store import VectorEngine
 from src.tools.pdf_tool import REASON_OK
 from src.tools.pdf_resolver import fetch_pdf_with_fallback
+from src.core.config import get_system_config
 
 # Marker for papers whose depth never triggers a PDF attempt
 # (FAST, or a MEDIUM paper below the full-text cutoff).
@@ -87,8 +88,12 @@ class IngestorAgent:
         them and the order is preserved through the UI). In MEDIUM mode the
         first ``full_text_top_n`` papers get full text; the rest get abstract.
         """
-        read_depth = config["read_depth"]
-        chunk_size = config["chunk_size"]
+        read_depth = config.get("read_depth", "abstract")
+        rag_cfg = config.get("rag", {})
+        chunk_size = rag_cfg.get("chunk_size", 512)
+        chunk_overlap = rag_cfg.get("chunk_overlap", 50)
+        sys_cfg = get_system_config()
+        title_trunc = sys_cfg.get("ui", {}).get("log_title_truncation", 60)
         quota = self._full_text_quota(read_depth, config, len(papers))
 
         def _log(msg: str) -> None:
@@ -109,14 +114,14 @@ class IngestorAgent:
             paper["citation_id"] = citation_id
 
             title = paper.get("title") or "Untitled"
-            _log(f"[Ingestor] Ingesting {citation_id} — {title[:60]}")
+            _log(f"[Ingestor] Ingesting {citation_id} — {title[:title_trunc]}")
 
             wants_full_text = idx <= quota
 
             if wants_full_text and read_depth == "full_pdf":
-                res = self._ingest_full_text_paged(paper, citation_id, chunk_size, _log)
+                res = self._ingest_full_text_paged(paper, citation_id, chunk_size, chunk_overlap, _log)
             elif wants_full_text:
-                res = self._ingest_full_text_coarse(paper, citation_id, chunk_size, _log)
+                res = self._ingest_full_text_coarse(paper, citation_id, chunk_size, chunk_overlap, _log)
             else:
                 # Abstract by intent: FAST, or a MEDIUM paper below the cutoff.
                 if read_depth != "abstract":
@@ -124,7 +129,7 @@ class IngestorAgent:
                         f"  ↳ {citation_id} rank {idx} > top-{quota} "
                         f"→ abstract only (policy)"
                     )
-                res = self._ingest_abstract(paper, citation_id, chunk_size, intended=True)
+                res = self._ingest_abstract(paper, citation_id, chunk_size, chunk_overlap, intended=True)
 
             # Attach the lean reference — NOT the text itself.
             paper["chunk_ids"] = res.chunk_ids
@@ -176,6 +181,7 @@ class IngestorAgent:
             paper: dict,
             citation_id: str,
             chunk_size: int,
+            chunk_overlap: int,
             intended: bool,
     ) -> _DepthResult:
         """
@@ -195,6 +201,7 @@ class IngestorAgent:
             text=abstract,
             citation_id=citation_id,
             chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
             metadata=self._meta(paper),
         )
         if not chunk_ids:
@@ -211,6 +218,7 @@ class IngestorAgent:
             paper: dict,
             citation_id: str,
             chunk_size: int,
+            chunk_overlap: int,
             log: Callable[[str], None],
     ) -> _DepthResult:
         """
@@ -229,6 +237,7 @@ class IngestorAgent:
                 text=pdf_text,
                 citation_id=citation_id,
                 chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
                 metadata=self._meta(paper),
             )
             if chunk_ids:
@@ -241,7 +250,7 @@ class IngestorAgent:
             f"  ↳ ⚠ {citation_id} No PDF ({outcome.result.reason}) "
             f"→ abstract fallback"
         )
-        res = self._ingest_abstract(paper, citation_id, chunk_size, intended=False)
+        res = self._ingest_abstract(paper, citation_id, chunk_size, chunk_overlap, intended=False)
         res.pdf_reason = outcome.result.reason
         return res
 
@@ -253,6 +262,7 @@ class IngestorAgent:
             paper: dict,
             citation_id: str,
             chunk_size: int,
+            chunk_overlap: int,
             log: Callable[[str], None],
     ) -> _DepthResult:
         """
@@ -270,6 +280,7 @@ class IngestorAgent:
                 pages=outcome.result.pages,
                 citation_id=citation_id,
                 chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
                 metadata=self._meta(paper),
             )
             if chunk_ids:
@@ -282,7 +293,7 @@ class IngestorAgent:
             f"  ↳ ⚠ {citation_id} No PDF ({outcome.result.reason}) "
             f"→ abstract fallback"
         )
-        res = self._ingest_abstract(paper, citation_id, chunk_size, intended=False)
+        res = self._ingest_abstract(paper, citation_id, chunk_size, chunk_overlap, intended=False)
         res.pdf_reason = outcome.result.reason
         return res
 

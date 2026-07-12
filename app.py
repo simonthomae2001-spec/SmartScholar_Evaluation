@@ -139,11 +139,12 @@ st.markdown("""
     }
 
     /* Limit max height of trace elements to make them scrollable */
-    div[data-testid="stStatusWidget"] div[data-testid="stVerticalBlock"],
-    div[data-testid="stExpanderDetails"] {
-        max-height: 400px;
-        overflow-y: auto;
-        resize: vertical;
+    div[data-testid="stExpanderDetails"]:has(.trace-marker) {
+        max-height: 400px !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        resize: vertical !important;
+        display: block !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -192,8 +193,13 @@ def _score_badge(score: int) -> str:
 
 def _reset_workflow():
     """Clear all workflow state and return to idle."""
+    # Bump run_id to guarantee fresh widget keys
+    run_id = st.session_state.get("run_id", 0) + 1
+    
     for key, default in _DEFAULTS.items():
         st.session_state[key] = default
+        
+    st.session_state["run_id"] = run_id
         
     # Clear dynamically generated Streamlit widget keys to prevent ghost state
     keys_to_delete = [
@@ -290,41 +296,42 @@ def _inject_scroll_hack():
     const parentDoc = window.document;
     
     function attachScroll() {
-        // Target expander details and Streamlit's native scrollable vertical blocks inside st.status
-        const containers = parentDoc.querySelectorAll('div[data-testid="stExpanderDetails"], div[data-testid="stStatusWidget"] div[data-testid="stVerticalBlock"]');
-        containers.forEach(c => {
-            if (c.dataset.scrollInit) return;
+        const markers = parentDoc.querySelectorAll('.trace-marker');
+        markers.forEach(marker => {
+            const c = marker.closest('div[data-testid="stExpanderDetails"]');
+            if (!c || c.dataset.scrollInit) return;
             c.dataset.scrollInit = 'true';
             c.dataset.isUserScrolling = 'false';
             
-            // Listen to scroll events: if user scrolls up, pause auto-scroll
             c.addEventListener('scroll', () => {
                 const atBottom = c.scrollTop + c.clientHeight >= c.scrollHeight - 10;
                 c.dataset.isUserScrolling = atBottom ? 'false' : 'true';
             });
+            
+            // Local observer: ONLY fires when THIS specific trace container gets new text
+            const innerObserver = new MutationObserver(() => {
+                if (c.dataset.isUserScrolling !== 'true') {
+                    c.scrollTop = c.scrollHeight;
+                }
+            });
+            innerObserver.observe(c, { childList: true, subtree: true, characterData: true });
         });
     }
 
-    // Observe DOM for new text inside the containers
-    const observer = new MutationObserver(() => {
+    // Global observer: ONLY checks for NEW trace containers, does not force scroll
+    const globalObserver = new MutationObserver(() => {
         attachScroll();
-        const containers = parentDoc.querySelectorAll('div[data-testid="stExpanderDetails"], div[data-testid="stStatusWidget"] div[data-testid="stVerticalBlock"]');
-        containers.forEach(c => {
-            if (c.dataset.scrollInit === 'true' && c.dataset.isUserScrolling !== 'true') {
-                c.scrollTop = c.scrollHeight;
-            }
-        });
     });
-    
-    observer.observe(parentDoc.body, { childList: true, subtree: true, characterData: true });
+    globalObserver.observe(parentDoc.body, { childList: true, subtree: true });
 
     // Handle expander open event: reset scroll to bottom
     parentDoc.addEventListener('toggle', (e) => {
         if (e.target && e.target.open) {
             setTimeout(() => {
-                const containers = e.target.querySelectorAll('div[data-testid="stExpanderDetails"], div[data-testid="stStatusWidget"] div[data-testid="stVerticalBlock"]');
-                containers.forEach(c => {
-                    if (c.dataset.scrollInit === 'true') {
+                const markers = e.target.querySelectorAll('.trace-marker');
+                markers.forEach(marker => {
+                    const c = marker.closest('div[data-testid="stExpanderDetails"]');
+                    if (c && c.dataset.scrollInit === 'true') {
                         c.dataset.isUserScrolling = 'false';
                         c.scrollTop = c.scrollHeight;
                     }
@@ -520,6 +527,7 @@ elif st.session_state.workflow_step == "enhancing":
         st.write(st.session_state.current_query)
 
     with st.status("🧠 Expanding your query into academic search terms…", expanded=True) as status:
+        st.markdown('<span class="trace-marker"></span>', unsafe_allow_html=True)
         trace = list(st.session_state.trace_steps)
         result: GraphState = {}
 
@@ -582,6 +590,7 @@ elif st.session_state.workflow_step == "query_review":
 
     # Replay trace
     with st.status("Queries Generated", state="complete", expanded=False):
+        st.markdown('<span class="trace-marker"></span>', unsafe_allow_html=True)
         for step in st.session_state.trace_steps:
             st.write(step)
 
@@ -660,6 +669,7 @@ elif st.session_state.workflow_step == "searching":
         st.write(st.session_state.current_query)
 
     with st.status("Searching Semantic Scholar & scoring papers…", expanded=True) as status:
+        st.markdown('<span class="trace-marker"></span>', unsafe_allow_html=True)
         trace = list(st.session_state.trace_steps)
 
         # Pre-fill historical trace logs
@@ -698,6 +708,7 @@ elif st.session_state.workflow_step == "paper_review":
 
     # Show search trace
     with st.status("Papers Ranked", state="complete", expanded=False):
+        st.markdown('<span class="trace-marker"></span>', unsafe_allow_html=True)
         for step in st.session_state.trace_steps:
             st.write(step)
 
@@ -761,10 +772,11 @@ elif st.session_state.workflow_step == "paper_review":
             st.markdown("---")
             st.markdown(f"**Abstract:** {abstract}")
 
+        run_id = st.session_state.get("run_id", 0)
         keep = st.checkbox(
             f"Include _{title[:60]}_",
             value=True,
-            key=f"paper_keep_{i}",
+            key=f"paper_keep_{run_id}_{i}",
         )
         keep_flags.append(keep)
 
@@ -842,6 +854,7 @@ elif st.session_state.workflow_step == "ingesting":
     with st.status(
             "🧠 Agent Pipeline (Ingestion, Analysis & Synthesis)…", expanded=True
     ) as status:
+        st.markdown('<span class="trace-marker"></span>', unsafe_allow_html=True)
         trace = list(st.session_state.trace_steps)
 
         # Pre-fill historical trace logs
@@ -884,6 +897,7 @@ elif st.session_state.workflow_step == "done":
     # Persist the trace logs so the user can review the entire thought process
     if st.session_state.trace_steps:
         with st.expander("Execution Trace", expanded=False):
+            st.markdown('<span class="trace-marker"></span>', unsafe_allow_html=True)
             for step in st.session_state.trace_steps:
                 st.write(step)
 

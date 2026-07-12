@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 
 import requests
 import fitz  # PyMuPDF
+from src.core.config import get_system_config
 
 
 # ------------------------------------------------------------------ #
@@ -47,10 +48,16 @@ import fitz  # PyMuPDF
 _USER_AGENT = (
     "Mozilla/5.0 (compatible; SmartScholar/0.1; academic research copilot)"
 )
-_REQUEST_TIMEOUT = (10, 30)            # (connect, read) seconds
 _MAX_PDF_BYTES = 30 * 1024 * 1024      # 30 MB hard cap
 _DOWNLOAD_CHUNK = 64 * 1024            # 64 KB per streamed chunk
-_MAX_RETRIES = 3                       # only transient failures are retried (F)
+
+def _get_timeout() -> tuple[float, float]:
+    val = get_system_config().get("network", {}).get("http_timeout_seconds", 10.0)
+    return (float(val), float(val) * 3.0)
+
+def _get_max_retries() -> int:
+    return int(get_system_config().get("network", {}).get("max_retries", 3))
+
 
 # Decision D — local PDF cache, alongside data/chroma_db and data/api_keys.
 # Path is derived from this file's location (project root), not the CWD.
@@ -195,7 +202,7 @@ def _download_with_retries(url: str) -> tuple[bytes | None, str]:
     and ``REASON_OK`` on success, or ``None`` and the last failure reason.
     """
     reason = REASON_CONNECTION
-    for _ in range(_MAX_RETRIES):
+    for _ in range(_get_max_retries()):
         raw, reason = _download_pdf(url)
         if raw is not None:
             return raw, REASON_OK
@@ -231,7 +238,7 @@ def _download_pdf(url: str) -> tuple[bytes | None, str]:
         with requests.get(
             url,
             headers=headers,
-            timeout=_REQUEST_TIMEOUT,
+            timeout=_get_timeout(),
             stream=True,
             allow_redirects=True,
         ) as resp:

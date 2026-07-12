@@ -158,8 +158,10 @@ def gatekeeper_node(state: GraphState, config: RunnableConfig) -> dict:
         }
 
     agent = _get_gatekeeper()
+    cfg = _resolve_config(state)
     decision = agent.evaluate_input(
         user_input=state.get("user_query", ""),
+        config=cfg,
     )
     is_valid = bool(decision.get("is_valid", False))
     reason = str(decision.get("reason", ""))
@@ -233,6 +235,7 @@ def researcher_search_node(state: GraphState, config: RunnableConfig) -> dict:
         user_input=state["user_query"],
         queries=state["search_queries"],
         limit_per_query=cfg["top_n_papers"],
+        config=cfg,
         status_callback=_agent_cb,
     )
 
@@ -275,6 +278,7 @@ def analyst_node(state: GraphState, config: RunnableConfig) -> dict:
     """
     _ui_log(config, "[System] Starting Analyst...")
     agent = _get_analyst()
+    cfg = _resolve_config(state)
     papers = state.get("active_papers", [])
     query = state.get("user_query", "")
     vector_engine = state.get("vectorEngine")
@@ -283,7 +287,7 @@ def analyst_node(state: GraphState, config: RunnableConfig) -> dict:
     def _agent_cb(msg: str):
         _ui_log(config, msg)
 
-    analysis_data = agent.analyze_papers(papers, query, vector_engine, feed_back, _agent_cb)
+    analysis_data = agent.analyze_papers(papers, query, vector_engine, feed_back, cfg, _agent_cb)
     _ui_log(config, "✓ [System] Analysis complete")
 
     return {"paper_analysis_data": analysis_data}

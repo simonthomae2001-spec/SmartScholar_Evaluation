@@ -60,3 +60,16 @@ def list_profiles() -> list[str]:
     """Return the names of all available profiles."""
     config_data = _load_config()
     return list(config_data.get("profiles", {}).keys())
+
+def get_system_config() -> dict:
+    """
+    Return the global system configuration dict.
+
+    Returns
+    -------
+    dict
+        The system configuration dictionary, containing global
+        settings like network timeouts and UI truncation limits.
+    """
+    config_data = _load_config()
+    return config_data.get("system", {})

@@ -98,7 +98,7 @@ class ResearcherAgent:
     #  Query expansion via LLM
     # ------------------------------------------------------------------ #
     def generate_search_queries(
-        self, user_input: str, num_queries: int
+        self, user_input: str, num_queries: int, config: dict = None
     ) -> tuple[list[str], str]:
         """
         Prompt the LLM to produce *num_queries* refined search queries for
@@ -127,7 +127,10 @@ class ResearcherAgent:
         )
 
         try:
-            response = self.llm.complete(prompt)
+            kwargs = {}
+            if config:
+                kwargs["temperature"] = config.get("llm", {}).get("temperature_creative", 0.3)
+            response = self.llm.complete(prompt, **kwargs)
             raw_text = str(response).strip()
 
             # ---- Path A: valid JSON object with strategy + queries ---- #
@@ -192,7 +195,7 @@ class ResearcherAgent:
         """
         max_q = config["max_queries"]
         queries, strategy = self.generate_search_queries(
-            user_query, num_queries=max_q
+            user_query, num_queries=max_q, config=config
         )
         return (queries[:max_q], strategy)
 
@@ -204,6 +207,7 @@ class ResearcherAgent:
         user_input: str,
         queries: list[str] | None,
         limit_per_query: int,
+        config: dict = None,
         status_callback: Any | None = None,
     ) -> list[dict]:
         """
@@ -230,7 +234,8 @@ class ResearcherAgent:
         """
 
         if queries is None:
-            queries = self.generate_search_queries(user_input, num_queries=3)[0]
+            max_q = config.get("max_queries", 3) if config else 3
+            queries = self.generate_search_queries(user_input, num_queries=max_q, config=config)[0]
             
         # If no queries were generated/passed, search the user_input
         if not queries:
@@ -307,7 +312,7 @@ class ResearcherAgent:
 
         # Try LLM-based scoring first
         try:
-            scored = self._llm_score(papers, user_query)
+            scored = self._llm_score(papers, user_query, config)
             if scored:
                 top_n = config["top_n_papers"]
                 return (scored[:top_n], scored[top_n:])
@@ -322,7 +327,7 @@ class ResearcherAgent:
     # ---- LLM-based scorer ----------------------------------------- #
 
     def _llm_score(
-        self, papers: list[dict], user_query: str
+        self, papers: list[dict], user_query: str, config: dict = None
     ) -> list[dict] | None:
         """
         Send a batch prompt to the LLM asking it to score every paper.
@@ -344,7 +349,11 @@ class ResearcherAgent:
             papers_json=json.dumps(compact, ensure_ascii=False),
         )
 
-        response = self.llm.complete(prompt)
+        kwargs = {}
+        if config:
+            kwargs["temperature"] = config.get("llm", {}).get("temperature_analytical", 0.1)
+
+        response = self.llm.complete(prompt, **kwargs)
         raw = str(response).strip()
         scores_list = self._parse_json_array(raw)
 

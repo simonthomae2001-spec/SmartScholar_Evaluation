@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 
 def structured_predicted_with_retries(llm: Ollama, output_cls: Type[Model],
-    messages: List[ChatMessage], max_retries:int = 4, use_complete_chat:bool=False, logger:Callable=None, **logger_args:Any) ->Model:
+    messages: List[ChatMessage], max_retries:int = 4, use_complete_chat:bool=False, logger:Callable=None, llm_kwargs: dict = None, **logger_args:Any) ->Model:
     """
     Makes a predict call with a given llm using structured output.
     If the llm fails to generate a valid response the validation exception
@@ -26,10 +26,12 @@ def structured_predicted_with_retries(llm: Ollama, output_cls: Type[Model],
     Returns : (Model) containing data from llm | (None) if generation fails
     """
     retries = 0
-    llm_kwargs = {"format": output_cls.model_json_schema()}
+    final_llm_kwargs = {"format": output_cls.model_json_schema()}
+    if llm_kwargs:
+        final_llm_kwargs.update(llm_kwargs)
 
     while retries <= max_retries:
-        response = llm.chat(messages, **llm_kwargs)
+        response = llm.chat(messages, **final_llm_kwargs)
         try:
             return output_cls.model_validate_json(response.message.content or "")
         except ValidationError as err:

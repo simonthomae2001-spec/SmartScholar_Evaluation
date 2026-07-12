@@ -1,35 +1,73 @@
-# config.yaml
-# Single Source of Truth for SmartScholar Configuration
+# config.yaml — Single Source of Truth (SSOT) for SmartScholar
 
 profiles:
   fast:
     max_queries: 3
     top_n_papers: 3
     read_depth: abstract
-    chunk_size: 1024
     max_loops: 1
-    critic_pass_threshold: 50
-    critic_top_k: 2
+    rag:
+      chunk_size: 1024
+      chunk_overlap: 100
+      analyst_top_k: 3
+      critic_top_k: 2
+    quality_gates:
+      critic_pass_threshold: 50
+      critic_min_floor_score: 35
+      short_circuit_final_eval: true
+    llm:
+      temperature_analytical: 0.1     # Used by Analyst, Critic, Ingestor
+      temperature_creative: 0.3       # Used by Researcher (Query Expansion)
+      max_tokens_short: 500           # Short extractions/summaries
+      max_tokens_long: 1000           # Deep analysis & fact verification
 
   medium:
     max_queries: 5
     top_n_papers: 5
     read_depth: hybrid
-    # Thema B: of the top_n_papers active papers (ranked by relevance), only
-    # the top full_text_top_n get the full-text PDF; the rest are ingested as
-    # abstract only. PDF and abstract are never stored together for one paper.
-    # (Ignored by fast/pro, whose read_depth fixes the full-text count anyway.)
     full_text_top_n: 3
-    chunk_size: 512
     max_loops: 2
-    critic_pass_threshold: 60
-    critic_top_k: 3
+    rag:
+      chunk_size: 512
+      chunk_overlap: 50
+      analyst_top_k: 5
+      critic_top_k: 3
+    quality_gates:
+      critic_pass_threshold: 60
+      critic_min_floor_score: 45
+      short_circuit_final_eval: true
+    llm:
+      temperature_analytical: 0.1
+      temperature_creative: 0.4
+      max_tokens_short: 800
+      max_tokens_long: 1500
 
   pro:
     max_queries: 10
     top_n_papers: 10
     read_depth: full_pdf
-    chunk_size: 256
     max_loops: 3
-    critic_pass_threshold: 70
-    critic_top_k: 5
+    rag:
+      chunk_size: 256
+      chunk_overlap: 30
+      analyst_top_k: 8
+      critic_top_k: 5
+    quality_gates:
+      critic_pass_threshold: 70
+      critic_min_floor_score: 50
+      short_circuit_final_eval: true
+    llm:
+      temperature_analytical: 0.1
+      temperature_creative: 0.4
+      max_tokens_short: 1000
+      max_tokens_long: 2000
+
+system:
+  network:
+    http_timeout_seconds: 10.0
+    llm_timeout_seconds: 300.0
+    health_check_timeout_seconds: 2.0
+    max_retries: 3
+  ui:
+    log_title_truncation: 60
+    log_snippet_truncation: 120

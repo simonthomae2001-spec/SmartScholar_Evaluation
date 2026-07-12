@@ -80,8 +80,15 @@ class SynthesizerAgent:
         _log(f"🧠 [Synthesizer] Starting LLM synthesis for {len(analysis_data)} papers")
 
         try:
+            temperature = config.get("llm", {}).get("temperature_creative", 0.4)
+            num_predict = config.get("llm", {}).get("max_tokens_long", 2500)
+            
             # 4. Call LLM (LlamaIndex standard for Ollama calls)
-            response = self.llm.complete(prompt)
+            response = self.llm.complete(
+                prompt,
+                temperature=temperature,
+                num_predict=num_predict
+            )
             
             # Extract the response as a string (the .text suffix is often required in LlamaIndex)
             final_review_text = str(response)

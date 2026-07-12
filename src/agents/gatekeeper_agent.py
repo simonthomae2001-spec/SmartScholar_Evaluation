@@ -83,7 +83,7 @@ class GatekeeperAgent:
     def __init__(self):
         self.llm = ModelFactory.get_model()
 
-    def evaluate_input(self, user_input: str) -> dict[str, Any]:
+    def evaluate_input(self, user_input: str, config: dict = None) -> dict[str, Any]:
         """
         Ask the configured project model whether the input may proceed.
 
@@ -110,7 +110,12 @@ class GatekeeperAgent:
         prompt = self.GATEKEEPER_PROMPT.format(user_input=user_input.strip())
 
         try:
-            response = self.llm.complete(prompt)
+            kwargs = {}
+            if config:
+                kwargs["temperature"] = config.get("llm", {}).get("temperature_analytical", 0.1)
+                kwargs["num_predict"] = config.get("llm", {}).get("max_tokens_short", 500)
+                
+            response = self.llm.complete(prompt, **kwargs)
             parsed = self._parse_json_object(str(response).strip())
             decision = self._coerce_decision(parsed)
             if decision:

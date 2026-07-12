@@ -69,9 +69,13 @@ def main():
     print("Initializing evaluator models via ModelFactory...")
 
     # Use your existing SmartScholar Factory to fetch LLM and Embeddings
+    from src.core.config import get_system_config
+    cfg = get_system_config()
+    temp = cfg.get("llm", {}).get("temperature_analytical", 0.0)
+    
     ollama_llm = ChatOllama(
-        model="llama3",  # Or whichever model you have installed locally in Ollama
-        temperature=0.0,
+        model=ModelFactory.get_model_name(),
+        temperature=temp,
         format="json"
     )
     ollama_embeddings = ModelFactory.get_embedding_model()
@@ -88,7 +92,8 @@ def main():
 
     print("Enforcing single-thread mode for Ollama via object injection...")
     # Our single-thread throttle for Ollama
-    ollama_config = RunConfig(max_workers=1, timeout=60)
+    timeout = cfg.get("network", {}).get("llm_timeout_seconds", 60.0)
+    ollama_config = RunConfig(max_workers=1, timeout=timeout)
 
     # The trick: We write the RunConfig directly into the internal
     # property dictionary of the metric objects. This bypasses any error messages!

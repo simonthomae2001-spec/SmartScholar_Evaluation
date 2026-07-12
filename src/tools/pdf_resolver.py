@@ -39,6 +39,7 @@ from src.tools.pdf_tool import (
     PdfExtractionResult,
     REASON_NO_URL,
 )
+from src.core.config import get_system_config
 
 # ------------------------------------------------------------------ #
 #  Configuration / constants
@@ -52,10 +53,14 @@ _UNPAYWALL_EMAIL_FILE = os.path.join(
 
 _ARXIV_API = "http://export.arxiv.org/api/query"
 _UNPAYWALL_API = "https://api.unpaywall.org/v2/"
-_HTTP_TIMEOUT = (10, 30)
 _USER_AGENT = (
     "Mozilla/5.0 (compatible; SmartScholar/0.1; academic research copilot)"
 )
+
+def _get_timeout() -> tuple[float, float]:
+    """Dynamically reads the network timeout from config.yaml as a connect/read tuple."""
+    val = get_system_config().get("network", {}).get("http_timeout_seconds", 10.0)
+    return (float(val), float(val) * 3.0)
 
 # arXiv title search is fuzzy: a "close enough" title would otherwise let us
 # ingest the WRONG paper's PDF. Require a very high similarity to accept it.
@@ -282,7 +287,7 @@ def _arxiv_search_by_title(title: str | None) -> str | None:
             _ARXIV_API,
             params=params,
             headers={"User-Agent": _USER_AGENT},
-            timeout=_HTTP_TIMEOUT,
+            timeout=_get_timeout(),
         )
         if resp.status_code != 200:
             return None
@@ -344,7 +349,7 @@ def _unpaywall_pdf_url(doi: str, email: str) -> str | None:
             f"{_UNPAYWALL_API}{clean_doi}",
             params={"email": email},
             headers={"User-Agent": _USER_AGENT},
-            timeout=_HTTP_TIMEOUT,
+            timeout=_get_timeout(),
         )
         if resp.status_code != 200:
             return None

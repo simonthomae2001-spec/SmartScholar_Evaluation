@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from src.core.model_factory import ModelFactory
 from src.core.vector_store import VectorEngine
 from src.tools.llm_tools import structured_predicted_with_retries
-
+from src.core.config import get_system_config
 
 class AnalystAgent:
     """Performs structured analysis on ingested papers."""
@@ -72,6 +72,7 @@ class AnalystAgent:
         self.llm = ModelFactory.get_model()
         self.vector_engine:VectorEngine =None
         self._analysis_data: Dict[dict] = {}
+        self.config = {}
 
     def _generate_questions(self, title:str) ->List[str]:
         """
@@ -90,7 +91,11 @@ class AnalystAgent:
             output_cls= self.AnalystQuestions,
             messages=[ChatMessage(role=MessageRole.USER, content=prompt_text)],
             logger=self._log,
-            msg= "Failed generating AnalystQuestions! Retrying..."
+            msg= "Failed generating AnalystQuestions! Retrying...",
+            llm_kwargs={
+                "temperature": self.config.get("llm", {}).get("temperature_analytical", 0.1),
+                "num_predict": self.config.get("llm", {}).get("max_tokens_short", 500)
+            }
         )
         if questions is None:
             self._log("⚠ [Analyst] Failed to generate questions, using fallback")
@@ -127,8 +132,9 @@ class AnalystAgent:
             key="citation_id",
             value=norm_id
         )])
+        top_k = self.config.get("rag", {}).get("analyst_top_k", 5)
         retriever = self.vector_engine.get_retriever(
-            similarity_top_k=5,
+            similarity_top_k=top_k,
             filters=filters
         )
         
@@ -157,7 +163,11 @@ class AnalystAgent:
             output_cls= self.AnalysisRecord,
             messages=[ChatMessage(role=MessageRole.USER, content=prompt)],
             logger=self._log,
-            msg= "Failed generating AnalysisRecord! Retrying..."
+            msg= "Failed generating AnalysisRecord! Retrying...",
+            llm_kwargs={
+                "temperature": self.config.get("llm", {}).get("temperature_analytical", 0.1),
+                "num_predict": self.config.get("llm", {}).get("max_tokens_long", 1000)
+            }
         )
         if record is None:
             self._log("⚠ [Analyst] Failed to generate record, using fallback")
@@ -188,9 +198,11 @@ class AnalystAgent:
 
         self._log(f"🧠 [Analyst] Generating analysis record...")
         record = self._generate_record(passages, orig_query)
-        self._log(f"  ↳ Methodology: {record.methodology[:120]}")
-        self._log(f"  ↳ Findings: {record.findings[:120]}")
-        self._log(f"  ↳ Limitations: {record.limitations[:120]}")
+        sys_cfg = get_system_config()
+        trunc_len = sys_cfg.get("ui", {}).get("log_snippet_truncation", 120)
+        self._log(f"  ↳ Methodology: {record.methodology[:trunc_len]}")
+        self._log(f"  ↳ Findings: {record.findings[:trunc_len]}")
+        self._log(f"  ↳ Limitations: {record.limitations[:trunc_len]}")
         
         return record
     
@@ -203,7 +215,11 @@ class AnalystAgent:
             output_cls= self.AnalysisRecord,
             messages=[ChatMessage(role=MessageRole.USER, content=prompt)],
             logger=self._log,
-            msg= "Failed generating AnalysisRecord! Retrying..."
+            msg= "Failed generating AnalysisRecord! Retrying...",
+            llm_kwargs={
+                "temperature": self.config.get("llm", {}).get("temperature_analytical", 0.1),
+                "num_predict": self.config.get("llm", {}).get("max_tokens_long", 1000)
+            }
         )
         if record is None:
             self._log("⚠ [Analyst] Failed to generate record, using fallback")
@@ -221,6 +237,7 @@ class AnalystAgent:
         query: str,
         vector_engine: VectorEngine,
         feedback: Dict[int, dict],
+        config: dict,
         status_callback: Callable[[str], None] | None = None,
     ) -> list[dict]:
         """
@@ -242,6 +259,7 @@ class AnalystAgent:
         """
         self.status_callback = status_callback
         self.vector_engine = vector_engine
+        self.config = config
         
         # Defensively re-hydrate the vector engine to ensure binding to the active collection
         if hasattr(self.vector_engine, 'rebind'):

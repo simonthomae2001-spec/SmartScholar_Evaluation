@@ -120,8 +120,9 @@ class CriticAgent:
             ``loop_count < config['max_loops']``, the orchestrator
             should route back to the Analyst.
         """
-        max_loops: int = config["max_loops"]
-        pass_threshold: int = config.get("critic_pass_threshold", 60)
+        max_loops: int = config.get("max_loops", 1)
+        pass_threshold: int = config.get("quality_gates", {}).get("critic_pass_threshold", 60)
+        short_circuit = config.get("short_circuit_final_eval", False)
 
         def _log(msg: str) -> None:
             if status_callback:
@@ -140,14 +141,14 @@ class CriticAgent:
         )
 
         # ----- Guard: loop budget exhausted → auto-approve ------------ #
-        if loop_count >= max_loops:
+        if loop_count >= max_loops or (short_circuit and loop_count >= max_loops - 1):
             _log(
-                f"⚠ [Critic] Loop budget exhausted ({loop_count}/{max_loops}). "
-                f"Auto-approving {len(analysis_data)} records"
+                f"⚠ [Critic] Loop budget exhausted ({loop_count + 1}/{max_loops}). "
+                f"Short-circuit enabled: Auto-approving {len(analysis_data)} records without verification."
             )
             return (
                 True,
-                f"Loop budget exhausted ({loop_count}/{max_loops}). "
+                f"Loop budget exhausted ({loop_count + 1}/{max_loops}). "
                 f"Auto-approved {len(analysis_data)} analysis records "
                 f"without further verification.",
             )
@@ -162,14 +163,14 @@ class CriticAgent:
         feedback_per_record: Dict[int, dict] = {}
         record_verdicts: list[dict] = []
 
-        top_k: int = config.get("critic_top_k", 3)
+        top_k: int = config.get("rag", {}).get("critic_top_k", 3)
 
         for record in analysis_data:
             cid = record.get("citation_id", "?")
             _log(f"🧠 [Critic] Verifying paper {cid}")
 
             source_text = self._build_verification_context(record, top_k, _log)
-            verdict = self._evaluate_record(record, source_text, _log)
+            verdict = self._evaluate_record(record, source_text, config, _log)
             record_verdicts.append(verdict)
             feedback_per_record[cid] = verdict
 
@@ -193,7 +194,7 @@ class CriticAgent:
         aggregate_score = sum(valid_scores) / len(valid_scores) if valid_scores else 0
 
         # A batch passes if the average meets the threshold AND no single paper is completely broken (< 50)
-        min_floor_score = 50
+        min_floor_score = config.get("quality_gates", {}).get("critic_min_floor_score", 50)
         lowest_score = min(valid_scores) if valid_scores else 0
 
         _critic_passed = (aggregate_score >= pass_threshold) and (lowest_score >= min_floor_score)
@@ -369,6 +370,7 @@ class CriticAgent:
         self,
         record: dict,
         source_text: str,
+        config: dict,
         _log: Callable[[str], None] | None = None,
     ) -> dict:
         """
@@ -420,11 +422,13 @@ class CriticAgent:
         )
 
         try:
+            temperature = config.get("llm", {}).get("temperature_analytical", 0.1)
+            num_predict = config.get("llm", {}).get("max_tokens_long", 1500)
             response = self.llm.complete(
                 prompt,
                 format="json",
-                temperature=0.1,
-                num_predict=1500
+                temperature=temperature,
+                num_predict=num_predict
             )
             raw_text = str(response).strip()
             parsed = self._extract_and_parse_json(raw_text)

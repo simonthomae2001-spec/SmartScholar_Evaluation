@@ -34,9 +34,8 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 from src.core.model_factory import ModelFactory
 
 
-# Explicit overlap as a fraction of chunk_size, so small (pro) chunks don't
-# drown in the SentenceSplitter default overlap of 200 tokens.
-_CHUNK_OVERLAP_RATIO = 0.15
+# Explicit overlap as a fraction of chunk_size is removed.
+# Chunking is config-driven and overlap is now provided explicitly.
 
 # Defaults shared with clear_collection() so the UI can clear the exact same
 # collection the VectorEngine uses, without instantiating a VectorEngine.
@@ -101,9 +100,8 @@ class VectorEngine:
     # ------------------------------------------------------------------ #
     #  Internal: build a SentenceSplitter for a given chunk_size
     # ------------------------------------------------------------------ #
-    def _make_splitter(self, chunk_size: int) -> SentenceSplitter:
-        overlap = max(1, int(chunk_size * _CHUNK_OVERLAP_RATIO))
-        return SentenceSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
+    def _make_splitter(self, chunk_size: int, chunk_overlap: int) -> SentenceSplitter:
+        return SentenceSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
     # ------------------------------------------------------------------ #
     #  Ingestion: single text blob (FAST abstract, MEDIUM hybrid)
@@ -113,6 +111,7 @@ class VectorEngine:
         text: str,
         citation_id: str,
         chunk_size: int,
+        chunk_overlap: int,
         metadata: dict | None = None,
     ) -> list[str]:
         """
@@ -125,7 +124,7 @@ class VectorEngine:
         if not text or not text.strip():
             return []
 
-        splitter = self._make_splitter(chunk_size)
+        splitter = self._make_splitter(chunk_size, chunk_overlap)
         chunks = splitter.split_text(text)
 
         base_meta = dict(metadata or {})
@@ -153,6 +152,7 @@ class VectorEngine:
         pages: list[tuple[int, str]],
         citation_id: str,
         chunk_size: int,
+        chunk_overlap: int,
         metadata: dict | None = None,
     ) -> list[str]:
         """
@@ -167,7 +167,7 @@ class VectorEngine:
         if not pages:
             return []
 
-        splitter = self._make_splitter(chunk_size)
+        splitter = self._make_splitter(chunk_size, chunk_overlap)
 
         base_meta = dict(metadata or {})
         base_meta["citation_id"] = citation_id

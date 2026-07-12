@@ -2,6 +2,13 @@ import os
 import time
 import requests
 
+from src.core.config import get_system_config
+
+def _get_timeout() -> float:
+    return float(get_system_config().get("network", {}).get("http_timeout_seconds", 30.0))
+
+def _get_max_retries() -> int:
+    return int(get_system_config().get("network", {}).get("max_retries", 5))
 
 class ScholarTool:
     _SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -11,8 +18,6 @@ class ScholarTool:
     _FIELDS = (
         "title,abstract,authors,year,openAccessPdf,url,citationCount,externalIds"
     )
-    _TIMEOUT = 30
-    _MAX_RETRIES = 5
 
     @staticmethod
     def _get_api_key() -> str:
@@ -40,18 +45,19 @@ class ScholarTool:
         """
         delay = 1.0
         resp = None
-        for attempt in range(ScholarTool._MAX_RETRIES):
+        max_retries = _get_max_retries()
+        for attempt in range(max_retries):
             try:
                 resp = requests.get(
                     ScholarTool._SEARCH_URL,
                     params=params,
                     headers=headers,
-                    timeout=ScholarTool._TIMEOUT,
+                    timeout=_get_timeout(),
                 )
             except requests.RequestException as e:
                 # Transient network error → back off and retry.
                 print(f"[ScholarTool] network error ({e}) — retry in {delay:.0f}s "
-                      f"({attempt + 1}/{ScholarTool._MAX_RETRIES})")
+                      f"({attempt + 1}/{max_retries})")
                 time.sleep(delay)
                 delay = min(delay * 2, 30)
                 continue
@@ -60,7 +66,7 @@ class ScholarTool:
                 retry_after = resp.headers.get("Retry-After", "")
                 wait = float(retry_after) if retry_after.isdigit() else delay
                 print(f"[ScholarTool] HTTP {resp.status_code} — backing off "
-                      f"{wait:.0f}s ({attempt + 1}/{ScholarTool._MAX_RETRIES})")
+                      f"{wait:.0f}s ({attempt + 1}/{max_retries})")
                 time.sleep(wait)
                 delay = min(delay * 2, 30)
                 continue
