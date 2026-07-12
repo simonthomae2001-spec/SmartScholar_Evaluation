@@ -194,6 +194,14 @@ def _reset_workflow():
     """Clear all workflow state and return to idle."""
     for key, default in _DEFAULTS.items():
         st.session_state[key] = default
+        
+    # Clear dynamically generated Streamlit widget keys to prevent ghost state
+    keys_to_delete = [
+        k for k in st.session_state.keys()
+        if k.startswith(("paper_keep_", "q_enable_", "q_text_"))
+    ]
+    for k in keys_to_delete:
+        del st.session_state[k]
 
 
 def _is_gatekeeper_confirmation(text: str) -> bool:
