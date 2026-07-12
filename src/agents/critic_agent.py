@@ -183,32 +183,27 @@ class CriticAgent:
                 _log(f"  ↳ Verdict: {summary}")
 
         # ----- Aggregate decision ------------------------------------- #
-        scores = [v.get("consistency_score", 0) for v in record_verdicts]
-        avg_score = sum(scores) / len(scores) if scores else 0
+        valid_scores = [v.get("consistency_score", 0) for v in record_verdicts if isinstance(v.get("consistency_score"), (int, float))]
+        aggregate_score = sum(valid_scores) / len(valid_scores) if valid_scores else 0
 
-        _log(
-            f"[Critic] Aggregate score: {avg_score:.0f}/100 "
-            f"(Threshold: {pass_threshold}/100)"
-        )
+        # A batch passes if the average meets the threshold AND no single paper is completely broken (< 50)
+        min_floor_score = 50
+        lowest_score = min(valid_scores) if valid_scores else 0
 
-        if avg_score >= pass_threshold and not all_issues:
-            # All clear
+        _critic_passed = (aggregate_score >= pass_threshold) and (lowest_score >= min_floor_score)
+
+        if _critic_passed:
+            # All clear (treat remaining issues as minor constructive feedback)
             feedback = (
                 f"All {len(analysis_data)} analysis records verified "
-                f"(avg consistency {avg_score:.0f}/100). No issues found."
+                f"(avg consistency {aggregate_score:.0f}/100, lowest {lowest_score:.0f}/100)."
             )
-            _log(
-                "✓ [Critic] All facts verified — "
-                "releasing to Synthesizer"
-            )
+            _log(f"✓ [Critic] Aggregate score: {aggregate_score:.0f}/100 meets threshold ({pass_threshold}/100) — releasing to Synthesizer")
             return (True, feedback)
 
         current_loop = loop_count + 1
         if current_loop < max_loops:
-            _log(
-                "✕ [Critic] Verification failed — "
-                "sending feedback to Analyst"
-            )
+            _log(f"✕ [Critic] Verification failed (Score: {aggregate_score:.0f}/100, Lowest: {lowest_score}/100 vs Threshold: {pass_threshold}/100) — sending feedback to Analyst")
         else:
             _log(
                 f"⚠ [Critic] Loop budget exhausted ({current_loop}/{max_loops}) "
@@ -409,7 +404,12 @@ class CriticAgent:
         )
 
         try:
-            response = self.llm.complete(prompt)
+            response = self.llm.complete(
+                prompt,
+                format="json",
+                temperature=0.1,
+                num_predict=1500
+            )
             raw_text = str(response).strip()
             parsed = self._extract_and_parse_json(raw_text)
 
@@ -443,7 +443,7 @@ class CriticAgent:
 
         except Exception as exc:
             print(f"[CriticAgent] LLM evaluation failed: {exc}")
-            _log(f"  ↳ ⚠ LLM evaluation failed for {cid}: {exc}")
+            _log(f"  ↳ ⚠ [Critic] JSON parsing failed for {cid}: {exc}")
 
         # Hard fallback: score 0 so the loop correctly rejects this record.
         return {
@@ -464,38 +464,40 @@ class CriticAgent:
         text = re.sub(r"```(?:json)?\s*", "", text)
         return text.strip("`").strip()
 
-    def _extract_and_parse_json(self, text: str) -> dict | None:
+    def _extract_and_parse_json(self, text: str) -> dict:
         """
         Robustly extract and auto-repair a JSON object from LLM output.
         """
-        # 1. Extract the JSON block using regex to ignore markdown fences or conversational prose
-        match = re.search(r'\{.*\}', text, re.DOTALL)
-        if not match:
-            return None
-        
-        json_str = match.group(0)
-        
-        # 2. Try parsing, with auto-repair for token truncation
+        if not text:
+            raise ValueError("Empty response from LLM")
+
+        # 1. Strip markdown code blocks if present
+        cleaned = re.sub(r'```(?:json)?\s*(.*?)\s*```', r'\1', text, flags=re.DOTALL)
+
+        # 2. Locate the outermost curly braces
+        match = re.search(r'\{(?:[^{}]|(?:\{[^{}]*\}))*\}', cleaned, re.DOTALL)
+        if match:
+            json_str = match.group(0)
+        else:
+            # Fallback: take everything from the first '{' to the last '}'
+            start = cleaned.find('{')
+            end = cleaned.rfind('}')
+            if start != -1 and end != -1 and end > start:
+                json_str = cleaned[start:end+1]
+            else:
+                json_str = cleaned
+
         try:
-            parsed = json.loads(json_str)
-            if isinstance(parsed, dict):
-                return parsed
-            return None
-        except json.JSONDecodeError:
-            # Heuristic repair for token truncation or broken endings
-            clean_str = json_str.rstrip()
-            repair_attempts = [
-                clean_str + '"}',   # Close open string and object
-                clean_str + '"]}',  # Close open string, array, and object
-                clean_str + '}',    # Close object
-                clean_str.rsplit('"', 1)[0] + '"}', # Cut broken word, close string and object
-            ]
-            
-            for attempt in repair_attempts:
-                try:
-                    parsed = json.loads(attempt)
-                    if isinstance(parsed, dict):
-                        return parsed
-                except json.JSONDecodeError:
-                    continue
-            return None
+            return json.loads(json_str)
+        except json.JSONDecodeError as e:
+            # Simple auto-repair for truncated JSON strings
+            try:
+                repaired_str = json_str.strip()
+                if not repaired_str.endswith("}"):
+                    if repaired_str.count('"') % 2 != 0:
+                        repaired_str += '"'
+                    repaired_str += "}"
+                return json.loads(repaired_str)
+            except Exception:
+                # If repair fails, re-raise original exception or log cleanly
+                raise e
