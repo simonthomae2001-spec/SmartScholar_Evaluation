@@ -26,7 +26,7 @@ SmartScholar implements an **Agentic RAG (Retrieval-Augmented Generation)** pipe
 
 | Principle | Implementation |
 |---|---|
-| **State-Machine Orchestration** | A [LangGraph](https://github.com/langchain-ai/langgraph) `StateGraph` defines the directed-acyclic execution topology. Every agent is a pure function `(GraphState, RunnableConfig) → dict` that receives the shared state, performs work, and returns a *partial update*. |
+| **State-Machine Orchestration** | A [LangGraph](https://github.com/langchain-ai/langgraph) `StateGraph` defines the execution topology. Every agent is a pure function `(GraphState, RunnableConfig) → dict` that receives the shared state, performs work, and returns a *partial update*. |
 | **Reactive UI with HITL Breakpoints** | A [Streamlit](https://streamlit.io) application (`app.py`) drives a step-by-step workflow. Between major phases (query expansion → search → paper review → analysis), the pipeline **yields control to the user**, who can edit, accept, reject, or regenerate before the next graph segment fires. A Gatekeeper override confirmation provides an additional HITL breakpoint for borderline queries. |
 | **Unidirectional Data Flow** | Data flows in one direction: User Input → `GraphState` → Agent Nodes → `GraphState` → UI Render. The UI *never* writes directly to agent internals; it mutates `st.session_state.graph_state` and then invokes the next graph segment. |
 
