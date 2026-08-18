@@ -37,6 +37,7 @@ from src.core.orchestrator import (
     stream_enhance_flow,
     stream_search_flow,
     stream_analysis_flow,
+    stream_synthesis_flow
 )
 
 from src.core.vector_store import clear_collection
@@ -349,18 +350,25 @@ def append_to_evaluation_logs(final_state: dict, filepath: str = "data/experimen
     """
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
+    # 1. Cleaned active papers (mit Fallback, falls Keys fehlen)
     cleaned_papers = []
     for paper in final_state.get("active_papers", []):
         cleaned_papers.append({
             "title": str(paper.get("title", "")),
             "abstract": str(paper.get("abstract", "")),
-            "ingested_content": str(paper.get("ingested_content", ""))
+            # Falls ingested_content leer/None ist, wird auf abstract zurückgegriffen
+            "ingested_content": str(paper.get("ingested_content") or paper.get("abstract") or "")
         })
+
+    # 2. Extract analysis data (KRITISCH für die Synthesizer-Evaluation!)
+    # Das ist exakt der Kontext, den der Synthesizer verarbeitet hat
+    analysis_data = final_state.get("paper_analysis_data", [])
 
     serializable_state = {
         "user_query": str(final_state.get("user_query", "")),
         "final_review": str(final_state.get("final_review", "")),
-        "active_papers": cleaned_papers
+        "active_papers": cleaned_papers,
+        "paper_analysis_data": analysis_data  # <--- HIER ERGÄNZT
     }
 
     existing_logs = []
@@ -376,6 +384,37 @@ def append_to_evaluation_logs(final_state: dict, filepath: str = "data/experimen
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(existing_logs, f, indent=4, ensure_ascii=False)
     print(f"Erfolgreich bereinigte Daten in {filepath} geloggt!")
+
+
+def run_synthesis_from_log(log_entry: dict):
+    """
+    Replay-Modus: Überspringt Retrieval, Ingestor & Analyst komplett.
+    Startet direkt und ausschließlich mit der Synthesizer-Phase.
+    """
+    mocked_state = {
+        "user_query": log_entry.get("user_query", ""),
+        "paper_analysis_data": log_entry.get("paper_analysis_data", []),
+        "active_papers": log_entry.get("active_papers", []),
+        "config_profile": st.session_state.get("config_profile", "medium")
+    }
+
+    st.info(f"⚡ Replay-Modus gestartet für Query: '{mocked_state['user_query']}'")
+
+    final_output_state = mocked_state.copy()
+
+    with st.status("🧠 Multi-Agent Synthesizer erzeugt Literatur-Review...", expanded=True) as status:
+        st.markdown('<span class="trace-marker"></span>', unsafe_allow_html=True)
+
+        # JETZT: Ruft direkt und isoliert den Synthesizer auf!
+        for event in stream_synthesis_flow(mocked_state):
+            if isinstance(event, str):
+                st.write(event)
+            elif isinstance(event, dict):
+                final_output_state = event
+
+        status.update(label="Synthese abgeschlossen!", state="complete", expanded=False)
+
+    return final_output_state
 
 # ------------------------------------------------------------------ #
 #  Sidebar
@@ -444,6 +483,51 @@ if st.session_state.workflow_step != "idle":
         clear_collection()
         _reset_workflow()
         st.rerun()
+
+# ------------------------------------------------------------------ #
+#  Sidebar: Replay & Evaluation Panel
+# ------------------------------------------------------------------ #
+st.sidebar.markdown("---")
+st.sidebar.subheader("🧪 Evaluation Replay Mode")
+
+# Saubere Datenbasis mit den 5 Test-Fragen
+testset_file = "data/evaluation_testset.json"
+
+if os.path.exists(testset_file):
+    try:
+        with open(testset_file, "r", encoding="utf-8") as f:
+            test_entries = json.load(f)
+
+        if test_entries:
+            # Erstelle Dropdown-Optionen: Index + Query Name
+            options = [f"Frage {i + 1}: {entry.get('user_query', '')[:35]}..." for i, entry in enumerate(test_entries)]
+            selected_idx = st.sidebar.selectbox(
+                "Testfall auswählen:",
+                range(len(options)),
+                format_func=lambda x: options[x],
+                key="replay_select_box"
+            )
+
+            if st.sidebar.button("🚀 Re-Run Synthesizer", use_container_width=True, type="primary"):
+                # Hole exakt das gewählte JSON-Objekt
+                selected_test = test_entries[selected_idx]
+
+                # Starte die Replay-Synthese
+                new_state = run_synthesis_from_log(selected_test)
+
+                # Speichere das neue Multi-Agent Ergebnis automatisch in einer eigenen Log-Datei
+                #append_to_evaluation_logs(new_state, filepath="data/experiment_multiagent_logs.json")
+
+                # Setze State auf 'done', um das Ergebnis direkt im Hauptfenster anzuzeigen
+                st.session_state.graph_state = new_state
+                st.session_state.workflow_step = "done"
+                st.rerun()
+        else:
+            st.sidebar.warning("`evaluation_testset.json` ist leer.")
+    except Exception as e:
+        st.sidebar.error(f"Fehler beim Laden des Testsets: {e}")
+else:
+    st.sidebar.caption("💡 Lege `data/evaluation_testset.json` an, um den Replay-Modus zu nutzen.")
 
 # ------------------------------------------------------------------ #
 #  Header

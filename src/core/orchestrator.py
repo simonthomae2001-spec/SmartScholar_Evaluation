@@ -41,7 +41,8 @@ from src.agents.researcher_agent import ResearcherAgent
 from src.agents.ingestor_agent import IngestorAgent
 from src.agents.analyst_agent import AnalystAgent
 from src.agents.critic_agent import CriticAgent
-from src.agents.synthesizer_agent import SynthesizerAgent
+#from src.agents.synthesizer_agent import SynthesizerAgent
+from src.agents.multi_agent_synthesizer import MultiAgentSynthesizerAgent as SynthesizerAgent
 
 # ------------------------------------------------------------------ #
 #  Shared agent singletons (created once, reused across invocations)

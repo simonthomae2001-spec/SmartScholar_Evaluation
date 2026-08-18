@@ -16,17 +16,21 @@ from ragas.embeddings import LangchainEmbeddingsWrapper
 from src.core.model_factory import ModelFactory
 from langchain_community.chat_models import ChatOllama
 
+from ragas.run_config import RunConfig
+
+# Extrem wichtig für lokale Modelle: max_workers=1 erzwingt DURCHGEHEND serielle Verarbeitung!
+ollama_run_config = RunConfig(
+    max_workers=1,   # Genau 1 LLM-Aufruf nach dem anderen!
+    timeout=600.0,   # 10 Minuten Puffer pro Einzel-Aufruf
+    max_retries=2
+)
+
 
 def load_smartscholar_logs(log_file_path: str) -> Dataset:
-    """
-    Loads your logged GraphState data from your logs (e.g., JSON/JSONL)
-    and transforms them into the exact input format required by Ragas.
-    """
     if not os.path.exists(log_file_path):
         raise FileNotFoundError(f"No log file found at {log_file_path}!")
 
     with open(log_file_path, "r", encoding="utf-8") as f:
-        # Assumes that you logged a list of GraphState dicts
         log_entries = json.load(f)
 
     questions = []
@@ -34,125 +38,114 @@ def load_smartscholar_logs(log_file_path: str) -> Dataset:
     answers = []
 
     for state in log_entries:
-        # 1. Extract the original research question
         questions.append(state.get("user_query", ""))
 
-        # 2. Collect the retrieved paper chunks (content of active papers)
-        # In your Ingestor/Analyst state, you store the extracted text.
-        # Ragas expects a LIST of strings per question (['chunk1', 'chunk2', ...])
-        paper_chunks = []
-        for paper in state.get("active_papers", []):
-            # Use the field where you write your paper texts/abstracts
-            chunk_text = paper.get("abstract") or paper.get("ingested_content", "")
-            if chunk_text:
-                paper_chunks.append(chunk_text)
+        # 1. Bevorzugt: Tatsächlicher Synthesizer-Input (paper_analysis_data)
+        analysis_data = state.get("paper_analysis_data", [])
+
+        if analysis_data:
+            paper_chunks = [
+                f"Citation ID: [{p.get('citation_id', '?')}]\n"
+                f"Relevance: {p.get('user_relevance', '')}\n"
+                f"Methodology: {p.get('methodology', '')}\n"
+                f"Findings: {p.get('findings', '')}\n"
+                f"Limitations: {p.get('limitations', '')}"
+                for p in analysis_data
+            ]
+        else:
+            # 2. Fallback: Abstract / Ingested Content aus active_papers
+            paper_chunks = [
+                p.get("ingested_content") or p.get("abstract", "")
+                for p in state.get("active_papers", [])
+            ]
 
         contexts_list.append(paper_chunks)
-
-        # 3. Fetch the final generated literature review (Markdown)
         answers.append(state.get("final_review", ""))
 
-    # Creation of the Hugging Face Dataset required by Ragas
-    evaluation_data = {
+    return Dataset.from_dict({
         "question": questions,
         "contexts": contexts_list,
         "answer": answers
-    }
-
-    return Dataset.from_dict(evaluation_data)
+    })
 
 
 def main():
     print("=== Starting SmartScholar Evaluation Pipeline ===")
 
-    # 1. Connect to your local Ollama models
-    print("Initializing evaluator models via ModelFactory...")
-
-    # Use your existing SmartScholar Factory to fetch LLM and Embeddings
+    # 1. Connect to local Ollama model (OHNE format="json"!)
     from src.core.config import get_system_config
     cfg = get_system_config()
     temp = cfg.get("llm", {}).get("temperature_analytical", 0.0)
-    
+
     ollama_llm = ChatOllama(
         model=ModelFactory.get_model_name(),
         temperature=temp,
-        format="json"
+        # 'format="json"' REMOVED: Cause of infinite loops / timeouts in Ragas!
     )
-    ollama_embeddings = ModelFactory.get_embedding_model()
 
-    # Wrap into the LangChain wrappers required by Ragas
     ragas_llm = LangchainLLMWrapper(ollama_llm)
 
-    # 2. The main() function: Create metrics and throttle via "backdoor"
-    print("Initializing Ragas metrics...")
-
-    # Create metrics empty without arguments
+    # 2. Setup Metrics with higher timeout
     metric_faithfulness = Faithfulness(llm=ragas_llm)
     metric_context_utilization = ContextUtilization(llm=ragas_llm)
 
-    print("Enforcing single-thread mode for Ollama via object injection...")
-    # Our single-thread throttle for Ollama
-    timeout = cfg.get("network", {}).get("llm_timeout_seconds", 60.0)
-    ollama_config = RunConfig(max_workers=1, timeout=timeout)
+    # 300 seconds timeout for large reviews & multi-statement verification
+    ollama_config = RunConfig(max_workers=1, timeout=300.0)
 
-    # The trick: We write the RunConfig directly into the internal
-    # property dictionary of the metric objects. This bypasses any error messages!
     metric_faithfulness.__dict__["run_config"] = ollama_config
     metric_context_utilization.__dict__["run_config"] = ollama_config
 
     metrics = [metric_faithfulness, metric_context_utilization]
 
-    # 3. Load your experiment data (WITH ABSOLUTE PATH FIX)
-    # Determine the directory where THIS script is located
-    # Find the "Evaluate/" folder
+    # 3. Load Dataset
     current_dir = os.path.dirname(os.path.abspath(__file__))
+    log_path = os.path.normpath(os.path.join(current_dir, "..", "..", "data", "experiment_baseline_logs_multi_correction.json"))
 
-    # Go up one folder to the main project and then enter "data/"
-    log_path = os.path.join(current_dir, "..", "..", "data", "experiment_baseline_logs.json")
+    print(f"Loading logs from: {log_path}")
+    full_dataset = load_smartscholar_logs(log_path)
+    total_items = len(full_dataset)
+    print(f"Successfully loaded {total_items} test cases.")
 
-    # Clean up the path (remove the "..")
-    log_path = os.path.normpath(log_path)
+    # 4. Process in Batches (e.g. 3 items per iteration)
+    BATCH_SIZE = 3
+    all_results_df = pd.DataFrame()
 
-    print(f"Searching for log file at: {log_path}")
+    output_csv = os.path.normpath(os.path.join(log_path, "..", "evaluation_results_multi_agent_correction2.csv"))
 
-    dataset = load_smartscholar_logs(log_path)
-    print(f"Successfully loaded {len(dataset)} test cases from logs.")
+    for i in range(0, total_items, BATCH_SIZE):
+        batch_dataset = full_dataset.select(range(i, min(i + BATCH_SIZE, total_items)))
+        print(
+            f"\n--- Processing Batch {i // BATCH_SIZE + 1} / {(total_items + BATCH_SIZE - 1) // BATCH_SIZE} (Items {i + 1} to {min(i + BATCH_SIZE, total_items)}) ---")
 
-    # 4. Run evaluation (NOW ABSOLUTELY CLEAN, NO WRONG KEYWORDS)
-    print("Running LLM-as-a-Judge evaluation (Ollama is now running serially)...")
-    results = evaluate(
-        dataset=dataset,
-        metrics=metrics
-        # No extra keywords here anymore – Ragas gets the info via the metrics!
-    )
+        try:
+            # Hier übergeben wir run_config direkt als Parameter
+            results = evaluate(
+                dataset=batch_dataset,
+                metrics=metrics,
+                run_config=ollama_run_config
+            )
 
-    # 5. Evaluate and save results (DYNAMIC FIX FOR KEYERROR)
-    print("\n=== EVALUATION RESULTS ===")
-    df = results.to_pandas()
+            batch_df = results.to_pandas()
+            all_results_df = pd.concat([all_results_df, batch_df], ignore_index=True)
 
-    # Check live what Ragas wrote into the DataFrame
-    print(f"Available columns in result: {list(df.columns)}")
+            # Zwischenspeichern
+            all_results_df.to_csv(output_csv, index=False)
+            print(f"✓ Batch saved. Current progress: {len(all_results_df)}/{total_items} items.")
 
-    # Search for the matching question column (often 'question' or 'user_input')
-    frage_col = 'user_input' if 'user_input' in df.columns else (
-        'question' if 'question' in df.columns else df.columns[0])
+        except Exception as e:
+            print(f"❌ Error during batch evaluation: {e}")
 
-    # Print the entire DataFrame so nothing can go wrong!
-    print("\nAll test results:")
-    print(df.to_string())
+    # 5. Summary
+    print("\n=== FINAL EVALUATION RESULTS ===")
+    print(f"Available columns: {list(all_results_df.columns)}")
+    print(all_results_df.to_string())
 
-    # Calculate average scores (dynamically searching for numerical columns)
     print("\n=== MEAN VALUES ===")
-    for col in df.columns:
-        if df[col].dtype in ['float64', 'int64']:
-            print(f"Average {col}: {df[col].mean():.2f}")
+    for col in all_results_df.columns:
+        if all_results_df[col].dtype in ['float64', 'int64']:
+            print(f"Average {col}: {all_results_df[col].mean():.4f}")
 
-    # Export results as CSV
-    output_csv = os.path.join(log_path, "..", "evaluation_results_summary.csv")
-    output_csv = os.path.normpath(output_csv)
-
-    df.to_csv(output_csv, index=False)
-    print(f"\nDetailed results saved to '{output_csv}'.")
+    print(f"\nSaved final results to '{output_csv}'.")
 
 
 if __name__ == "__main__":
